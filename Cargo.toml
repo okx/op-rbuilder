@@ -196,3 +196,87 @@ time = { version = "0.3.36", features = ["macros", "formatting", "parsing"] }
 vergen = "9.0.4"
 vergen-git2 = "1.0.5"
 opentelemetry = { version = "0.29.1", features = ["trace"] }
+
+
+[patch."https://github.com/paradigmxyz/reth"]
+reth = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-chain-state = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-cli = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-cli-commands = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-cli-util = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-db = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-db-common = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-errors = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-payload-builder = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-node-api = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-rpc-engine-api = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-node-ethereum = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-trie = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-trie-parallel = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-basic-payload-builder = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-node-core = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-primitives = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-primitives-traits = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-provider = { git = "https://github.com/okx/reth", branch = "dev", features = [
+    "test-utils",
+] }
+
+reth-chainspec = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-storage-api = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-rpc-api = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-evm = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-evm-ethereum = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-execution-errors = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-exex = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-tasks = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-metrics = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-trie-db = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-payload-primitives = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-transaction-pool = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-execution-types = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-revm = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-payload-builder-primitives = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-payload-util = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-rpc-layer = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-network-peers = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-testing-utils = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-node-builder = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-rpc-eth-types = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-tracing-otlp = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-ipc = { git = "https://github.com/okx/reth", branch = "dev" }
+
+# reth optimism
+reth-optimism-primitives = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-optimism-consensus = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-optimism-cli = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-optimism-forks = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-optimism-evm = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-optimism-node = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-optimism-payload-builder = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-optimism-chainspec = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-optimism-txpool = { git = "https://github.com/okx/reth", branch = "dev" }
+reth-optimism-rpc = { git = "https://github.com/okx/reth", branch = "dev", features = [
+    "client",
+] }
+
+[patch.crates-io]
+alloy-consensus = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-contract = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-eips = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-genesis = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-json-rpc = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-network = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-network-primitives = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-node-bindings = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-provider = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-pubsub = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-rpc-client = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-rpc-types = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-rpc-types-beacon = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-rpc-types-engine = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-rpc-types-eth = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-serde = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-signer = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-signer-local = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-transport = { git = "https://github.com/okx/alloy", rev = "65707b1" }
+alloy-transport-http = { git = "https://github.com/okx/alloy", rev = "65707b1" }
