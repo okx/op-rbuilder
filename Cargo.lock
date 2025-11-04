@@ -15209,8 +15209,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "alloy-node-bindings"
-version = "1.0.37"
-source = "git+https://github.com/okx/alloy?rev=65707b1#65707b146e7e448666af615cc3464d649dcc04b2"

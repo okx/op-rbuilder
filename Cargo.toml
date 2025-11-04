@@ -267,7 +267,6 @@ alloy-genesis = { git = "https://github.com/okx/alloy", rev = "65707b1" }
 alloy-json-rpc = { git = "https://github.com/okx/alloy", rev = "65707b1" }
 alloy-network = { git = "https://github.com/okx/alloy", rev = "65707b1" }
 alloy-network-primitives = { git = "https://github.com/okx/alloy", rev = "65707b1" }
-alloy-node-bindings = { git = "https://github.com/okx/alloy", rev = "65707b1" }
 alloy-provider = { git = "https://github.com/okx/alloy", rev = "65707b1" }
 alloy-pubsub = { git = "https://github.com/okx/alloy", rev = "65707b1" }
 alloy-rpc-client = { git = "https://github.com/okx/alloy", rev = "65707b1" }
