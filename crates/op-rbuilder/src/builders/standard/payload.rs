@@ -14,16 +14,16 @@ use alloy_evm::Database;
 use alloy_primitives::U256;
 use reth::payload::PayloadBuilderAttributes;
 use reth_basic_payload_builder::{BuildOutcome, BuildOutcomeKind, MissingPayloadBehaviour};
-use reth_chain_state::{ExecutedBlock, ExecutedBlockWithTrieUpdates, ExecutedTrieUpdates};
 use reth_evm::{ConfigureEvm, execute::BlockBuilder};
 use reth_node_api::{Block, PayloadBuilderError};
 use reth_optimism_consensus::{calculate_receipt_root_no_memo_optimism, isthmus};
 use reth_optimism_evm::{OpEvmConfig, OpNextBlockEnvAttributes};
 use reth_optimism_forks::OpHardforks;
 use reth_optimism_node::{OpBuiltPayload, OpPayloadBuilderAttributes};
-use reth_optimism_primitives::{OpPrimitives, OpTransactionSigned};
+use reth_optimism_primitives::OpTransactionSigned;
 use reth_payload_util::{BestPayloadTransactions, NoopPayloadTransactions, PayloadTransactions};
 use reth_primitives::RecoveredBlock;
+use reth_primitives_traits::InMemorySize;
 use reth_provider::{ExecutionOutcome, StateProvider};
 use reth_revm::{
     State, database::StateProviderDatabase, db::states::bundle_state::BundleRetention,
@@ -201,6 +201,21 @@ where
 
         let chain_spec = self.client.chain_spec();
         let timestamp = config.attributes.timestamp();
+
+        let extra_data = if chain_spec.is_jovian_active_at_timestamp(timestamp) {
+            config
+                .attributes
+                .get_jovian_extra_data(chain_spec.base_fee_params_at_timestamp(timestamp))
+                .map_err(PayloadBuilderError::other)?
+        } else if chain_spec.is_holocene_active_at_timestamp(timestamp) {
+            config
+                .attributes
+                .get_holocene_extra_data(chain_spec.base_fee_params_at_timestamp(timestamp))
+                .map_err(PayloadBuilderError::other)?
+        } else {
+            Default::default()
+        };
+
         let block_env_attributes = OpNextBlockEnvAttributes {
             timestamp,
             suggested_fee_recipient: config.attributes.suggested_fee_recipient(),
@@ -213,14 +228,7 @@ where
                 .attributes
                 .payload_attributes
                 .parent_beacon_block_root,
-            extra_data: if chain_spec.is_holocene_active_at_timestamp(timestamp) {
-                config
-                    .attributes
-                    .get_holocene_extra_data(chain_spec.base_fee_params_at_timestamp(timestamp))
-                    .map_err(PayloadBuilderError::other)?
-            } else {
-                Default::default()
-            },
+            extra_data,
         };
 
         let evm_env = self
@@ -231,6 +239,7 @@ where
         let ctx = OpPayloadBuilderCtx {
             evm_config: self.evm_config.clone(),
             da_config: self.config.da_config.clone(),
+            gas_limit_config: self.config.gas_limit_config.clone(),
             chain_spec,
             config,
             evm_env,
@@ -357,6 +366,7 @@ impl<Txs: PayloadTxsBounds> OpBuilder<'_, Txs> {
             };
 
         let builder_tx_gas = builder_txs.iter().fold(0, |acc, tx| acc + tx.gas_used);
+
         let block_gas_limit = ctx.block_gas_limit().saturating_sub(builder_tx_gas);
         if block_gas_limit == 0 {
             error!(
@@ -365,6 +375,7 @@ impl<Txs: PayloadTxsBounds> OpBuilder<'_, Txs> {
         }
         // Save some space in the block_da_limit for builder tx
         let builder_tx_da_size = builder_txs.iter().fold(0, |acc, tx| acc + tx.da_size);
+        info.cumulative_da_bytes_used += builder_tx_da_size;
         let block_da_limit = ctx
             .da_config
             .max_da_block_size()
@@ -458,6 +469,11 @@ impl<Txs: PayloadTxsBounds> OpBuilder<'_, Txs> {
             };
 
         let block_number = ctx.block_number();
+        // OP doesn't support blobs/EIP-4844.
+        // https://specs.optimism.io/protocol/exec-engine.html#ecotone-disable-blob-transactions
+        // Need [Some] or [None] based on hardfork to match block hash.
+        let (excess_blob_gas, blob_gas_used) = ctx.blob_fields(&info);
+
         let execution_outcome = ExecutionOutcome::new(
             db.take_bundle(),
             vec![info.receipts],
@@ -520,10 +536,6 @@ impl<Txs: PayloadTxsBounds> OpBuilder<'_, Txs> {
         // create the block header
         let transactions_root = proofs::calculate_transaction_root(&info.executed_transactions);
 
-        // OP doesn't support blobs/EIP-4844.
-        // https://specs.optimism.io/protocol/exec-engine.html#ecotone-disable-blob-transactions
-        // Need [Some] or [None] based on hardfork to match block hash.
-        let (excess_blob_gas, blob_gas_used) = ctx.blob_fields();
         let extra_data = ctx.extra_data()?;
 
         let header = Header {
@@ -564,17 +576,18 @@ impl<Txs: PayloadTxsBounds> OpBuilder<'_, Txs> {
         info!(target: "payload_builder", id=%ctx.attributes().payload_id(), "sealed built block");
 
         // create the executed block data
-        let executed: ExecutedBlockWithTrieUpdates<OpPrimitives> = ExecutedBlockWithTrieUpdates {
-            block: ExecutedBlock {
-                recovered_block: Arc::new(RecoveredBlock::<
-                    alloy_consensus::Block<OpTransactionSigned>,
-                >::new_sealed(
-                    sealed_block.as_ref().clone(), info.executed_senders
-                )),
-                execution_output: Arc::new(execution_outcome),
-                hashed_state: Arc::new(hashed_state),
-            },
-            trie: ExecutedTrieUpdates::Present(Arc::new(trie_output)),
+        use either::Either;
+        use reth_payload_primitives::BuiltPayloadExecutedBlock;
+        let executed = BuiltPayloadExecutedBlock {
+            recovered_block: Arc::new(
+                RecoveredBlock::<alloy_consensus::Block<OpTransactionSigned>>::new_sealed(
+                    sealed_block.as_ref().clone(),
+                    info.executed_senders,
+                ),
+            ),
+            execution_output: Arc::new(execution_outcome),
+            hashed_state: Either::Left(Arc::new(hashed_state)),
+            trie_updates: Either::Left(Arc::new(trie_output)),
         };
 
         let no_tx_pool = ctx.attributes().no_tx_pool;
@@ -588,10 +601,10 @@ impl<Txs: PayloadTxsBounds> OpBuilder<'_, Txs> {
 
         ctx.metrics
             .payload_byte_size
-            .record(payload.block().size() as f64);
+            .record(InMemorySize::size(payload.block()) as f64);
         ctx.metrics
             .payload_byte_size_gauge
-            .set(payload.block().size() as f64);
+            .set(InMemorySize::size(payload.block()) as f64);
 
         if no_tx_pool {
             // if `no_tx_pool` is set only transactions from the payload attributes will be included

@@ -40,6 +40,8 @@ pub struct ExecutionInfo<Extra: Debug + Default = ()> {
     pub total_fees: U256,
     /// Extra execution information that can be attached by individual builders.
     pub extra: Extra,
+    /// DA Footprint Scalar for Jovian
+    pub da_footprint_scalar: Option<u16>,
 }
 
 impl<T: Debug + Default> ExecutionInfo<T> {
@@ -53,6 +55,7 @@ impl<T: Debug + Default> ExecutionInfo<T> {
             cumulative_da_bytes_used: 0,
             total_fees: U256::ZERO,
             extra: Default::default(),
+            da_footprint_scalar: None,
         }
     }
 
@@ -69,19 +72,32 @@ impl<T: Debug + Default> ExecutionInfo<T> {
         tx_data_limit: Option<u64>,
         block_data_limit: Option<u64>,
         tx_gas_limit: u64,
+        da_footprint_gas_scalar: Option<u16>,
     ) -> Result<(), TxnExecutionResult> {
         if tx_data_limit.is_some_and(|da_limit| tx_da_size > da_limit) {
             return Err(TxnExecutionResult::TransactionDALimitExceeded);
         }
+        let total_da_bytes_used = self.cumulative_da_bytes_used.saturating_add(tx_da_size);
 
-        if block_data_limit
-            .is_some_and(|da_limit| self.cumulative_da_bytes_used + tx_da_size > da_limit)
-        {
+        if block_data_limit.is_some_and(|da_limit| total_da_bytes_used > da_limit) {
             return Err(TxnExecutionResult::BlockDALimitExceeded(
                 self.cumulative_da_bytes_used,
                 tx_da_size,
                 block_data_limit.unwrap_or_default(),
             ));
+        }
+
+        // Post Jovian: the tx DA footprint must be less than the block gas limit
+        if let Some(da_footprint_gas_scalar) = da_footprint_gas_scalar {
+            let tx_da_footprint =
+                total_da_bytes_used.saturating_mul(da_footprint_gas_scalar as u64);
+            if tx_da_footprint > block_gas_limit {
+                return Err(TxnExecutionResult::BlockDALimitExceeded(
+                    total_da_bytes_used,
+                    tx_da_size,
+                    tx_da_footprint,
+                ));
+            }
         }
 
         if self.cumulative_gas_used + tx_gas_limit > block_gas_limit {

@@ -18,10 +18,11 @@ use alloy_consensus::{
 use alloy_eips::{Encodable2718, eip7685::EMPTY_REQUESTS_HASH, merge::BEACON_NONCE};
 use alloy_primitives::{Address, B256, U256, map::foldhash::HashMap};
 use core::time::Duration;
+use either::Either;
 use eyre::WrapErr as _;
 use reth::payload::PayloadBuilderAttributes;
 use reth_basic_payload_builder::BuildOutcome;
-use reth_chain_state::{ExecutedBlock, ExecutedBlockWithTrieUpdates, ExecutedTrieUpdates};
+use reth_chainspec::EthChainSpec;
 use reth_evm::{ConfigureEvm, execute::BlockBuilder};
 use reth_node_api::{Block, NodePrimitives, PayloadBuilderError};
 use reth_optimism_consensus::{calculate_receipt_root_no_memo_optimism, isthmus};
@@ -29,6 +30,7 @@ use reth_optimism_evm::{OpEvmConfig, OpNextBlockEnvAttributes};
 use reth_optimism_forks::OpHardforks;
 use reth_optimism_node::{OpBuiltPayload, OpPayloadBuilderAttributes};
 use reth_optimism_primitives::{OpPrimitives, OpReceipt, OpTransactionSigned};
+use reth_payload_primitives::BuiltPayloadExecutedBlock;
 use reth_payload_util::BestPayloadTransactions;
 use reth_primitives_traits::RecoveredBlock;
 use reth_provider::{
@@ -87,8 +89,8 @@ pub struct FlashblocksExtraCtx {
     gas_per_batch: u64,
     /// DA bytes limit per flashblock
     da_per_batch: Option<u64>,
-    /// Whether to calculate the state root for each flashblock
-    calculate_state_root: bool,
+    /// Whether to disable state root calculation for each flashblock
+    disable_state_root: bool,
 }
 
 impl FlashblocksExtraCtx {
@@ -221,6 +223,21 @@ where
     ) -> eyre::Result<OpPayloadBuilderCtx<FlashblocksExtraCtx>> {
         let chain_spec = self.client.chain_spec();
         let timestamp = config.attributes.timestamp();
+
+        let extra_data = if chain_spec.is_jovian_active_at_timestamp(timestamp) {
+            config
+                .attributes
+                .get_jovian_extra_data(chain_spec.base_fee_params_at_timestamp(timestamp))
+                .wrap_err("failed to get holocene extra data for flashblocks payload builder")?
+        } else if chain_spec.is_holocene_active_at_timestamp(timestamp) {
+            config
+                .attributes
+                .get_holocene_extra_data(chain_spec.base_fee_params_at_timestamp(timestamp))
+                .wrap_err("failed to get holocene extra data for flashblocks payload builder")?
+        } else {
+            Default::default()
+        };
+
         let block_env_attributes = OpNextBlockEnvAttributes {
             timestamp,
             suggested_fee_recipient: config.attributes.suggested_fee_recipient(),
@@ -233,18 +250,12 @@ where
                 .attributes
                 .payload_attributes
                 .parent_beacon_block_root,
-            extra_data: if chain_spec.is_holocene_active_at_timestamp(timestamp) {
-                config
-                    .attributes
-                    .get_holocene_extra_data(chain_spec.base_fee_params_at_timestamp(timestamp))
-                    .wrap_err("failed to get holocene extra data for flashblocks payload builder")?
-            } else {
-                Default::default()
-            },
+            extra_data,
         };
 
-        let evm_env = self
-            .evm_config
+        let evm_config = self.evm_config.clone();
+
+        let evm_env = evm_config
             .next_evm_env(&config.parent_header, &block_env_attributes)
             .wrap_err("failed to create next evm env")?;
 
@@ -256,6 +267,7 @@ where
             block_env_attributes,
             cancel,
             da_config: self.config.da_config.clone(),
+            gas_limit_config: self.config.gas_limit_config.clone(),
             builder_signer: self.config.builder_signer,
             metrics: Default::default(),
             extra_ctx,
@@ -286,7 +298,10 @@ where
 
         // We log only every 100th block to reduce usage
         let span = if cfg!(feature = "telemetry")
-            && config.parent_header.number % self.config.sampling_ratio == 0
+            && config
+                .parent_header
+                .number
+                .is_multiple_of(self.config.sampling_ratio)
         {
             span!(Level::INFO, "build_payload")
         } else {
@@ -299,14 +314,14 @@ where
         );
 
         let timestamp = config.attributes.timestamp();
-        let calculate_state_root = self.config.specific.calculate_state_root;
+        let disable_state_root = self.config.specific.disable_state_root;
         let ctx = self
             .get_op_payload_builder_ctx(
                 config.clone(),
                 block_cancel.clone(),
                 FlashblocksExtraCtx {
                     target_flashblock_count: self.config.flashblocks_per_block(),
-                    calculate_state_root,
+                    disable_state_root,
                     ..Default::default()
                 },
             )
@@ -350,12 +365,13 @@ where
         // We subtract gas limit and da limit for builder transaction from the whole limit
         let builder_tx_gas = builder_txs.iter().fold(0, |acc, tx| acc + tx.gas_used);
         let builder_tx_da_size: u64 = builder_txs.iter().fold(0, |acc, tx| acc + tx.da_size);
+        info.cumulative_da_bytes_used += builder_tx_da_size;
 
         let (payload, fb_payload) = build_block(
             &mut state,
             &ctx,
             &mut info,
-            calculate_state_root || ctx.attributes().no_tx_pool, // need to calculate state root for CL sync
+            !disable_state_root || ctx.attributes().no_tx_pool, // need to calculate state root for CL sync
         )?;
 
         self.payload_tx
@@ -450,7 +466,7 @@ where
             target_da_for_batch,
             gas_per_batch,
             da_per_batch,
-            calculate_state_root,
+            disable_state_root,
         };
 
         let mut fb_cancel = block_cancel.child_token();
@@ -626,6 +642,7 @@ where
 
         let builder_tx_gas = builder_txs.iter().fold(0, |acc, tx| acc + tx.gas_used);
         let builder_tx_da_size: u64 = builder_txs.iter().fold(0, |acc, tx| acc + tx.da_size);
+        info.cumulative_da_bytes_used += builder_tx_da_size;
         target_gas_for_batch = target_gas_for_batch.saturating_sub(builder_tx_gas);
 
         // saturating sub just in case, we will log an error if da_limit too small for builder_tx_da_size
@@ -699,7 +716,7 @@ where
             state,
             ctx,
             info,
-            ctx.extra_ctx.calculate_state_root || ctx.attributes().no_tx_pool,
+            !ctx.extra_ctx.disable_state_root || ctx.attributes().no_tx_pool,
         );
         let total_block_built_duration = total_block_built_duration.elapsed();
         ctx.metrics
@@ -1030,10 +1047,7 @@ where
     // create the block header
     let transactions_root = proofs::calculate_transaction_root(&info.executed_transactions);
 
-    // OP doesn't support blobs/EIP-4844.
-    // https://specs.optimism.io/protocol/exec-engine.html#ecotone-disable-blob-transactions
-    // Need [Some] or [None] based on hardfork to match block hash.
-    let (excess_blob_gas, blob_gas_used) = ctx.blob_fields();
+    let (excess_blob_gas, blob_gas_used) = ctx.blob_fields(info);
     let extra_data = ctx.extra_data()?;
 
     let header = Header {
@@ -1073,13 +1087,12 @@ where
     let recovered_block =
         RecoveredBlock::new_unhashed(block.clone(), info.executed_senders.clone());
     // create the executed block data
-    let executed: ExecutedBlockWithTrieUpdates<OpPrimitives> = ExecutedBlockWithTrieUpdates {
-        block: ExecutedBlock {
-            recovered_block: Arc::new(recovered_block),
-            execution_output: Arc::new(execution_outcome),
-            hashed_state: Arc::new(hashed_state),
-        },
-        trie: ExecutedTrieUpdates::Present(Arc::new(trie_output)),
+
+    let executed = BuiltPayloadExecutedBlock {
+        recovered_block: Arc::new(recovered_block),
+        execution_output: Arc::new(execution_outcome),
+        hashed_state: Either::Left(Arc::new(hashed_state)),
+        trie_updates: Either::Left(Arc::new(trie_output)),
     };
     debug!(target: "payload_builder", message = "Executed block created");
 
@@ -1117,6 +1130,8 @@ where
         block_number: ctx.parent().number + 1,
     };
 
+    let (_, blob_gas_used) = ctx.blob_fields(info);
+
     // Prepare the flashblocks message
     let fb_payload = FlashblocksPayloadV1 {
         payload_id: ctx.payload_id(),
@@ -1145,6 +1160,7 @@ where
             transactions: new_transactions_encoded,
             withdrawals: ctx.withdrawals().cloned().unwrap_or_default().to_vec(),
             withdrawals_root: withdrawals_root.unwrap_or_default(),
+            blob_gas_used,
         },
         metadata: serde_json::to_value(&metadata).unwrap_or_default(),
     };
