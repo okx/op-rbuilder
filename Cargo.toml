@@ -295,3 +295,6 @@ alloy-signer = { git = "https://github.com/alloy-rs/alloy", rev = "35bc323cc2391
 alloy-signer-local = { git = "https://github.com/alloy-rs/alloy", rev = "35bc323cc23911e52cb1ec8f6a58ebb5d5869b27" }
 alloy-transport = { git = "https://github.com/alloy-rs/alloy", rev = "35bc323cc23911e52cb1ec8f6a58ebb5d5869b27" }
 alloy-transport-http = { git = "https://github.com/alloy-rs/alloy", rev = "35bc323cc23911e52cb1ec8f6a58ebb5d5869b27" }
+
+[patch."http://github.com/flashbots/rollup-boost"]
+rollup-boost = { git = "http://github.com/okx/rollup-boost", tag = "v0.1.2" }
