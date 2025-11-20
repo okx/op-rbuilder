@@ -188,7 +188,10 @@ impl TransactionBuilder {
         };
 
         self.tx.nonce = nonce;
-        self.tx.max_fee_per_gas = base_fee + self.tx.max_priority_fee_per_gas;
+
+        if self.tx.max_fee_per_gas == 0 {
+            self.tx.max_fee_per_gas = base_fee + self.tx.max_priority_fee_per_gas;
+        }
 
         signer
             .sign_tx(OpTypedTransaction::Eip1559(self.tx))
@@ -284,7 +287,7 @@ impl TransactionPoolObserver {
                                 tracing::debug!("Transaction pending: {hash}");
                                 observations.entry(hash).or_default().push_back(TransactionEvent::Pending);
                             },
-                            Some(FullTransactionEvent::Queued(hash)) => {
+                            Some(FullTransactionEvent::Queued(hash, _)) => {
                                 tracing::debug!("Transaction queued: {hash}");
                                 observations.entry(hash).or_default().push_back(TransactionEvent::Queued);
                             },
