@@ -18,10 +18,10 @@ use alloy_consensus::{
 use alloy_eips::{Encodable2718, eip7685::EMPTY_REQUESTS_HASH, merge::BEACON_NONCE};
 use alloy_primitives::{Address, B256, U256, map::foldhash::HashMap};
 use core::time::Duration;
+use either::Either;
 use eyre::WrapErr as _;
 use reth::payload::PayloadBuilderAttributes;
 use reth_basic_payload_builder::BuildOutcome;
-use reth_chain_state::{ExecutedBlock, ExecutedBlockWithTrieUpdates, ExecutedTrieUpdates};
 use reth_evm::{ConfigureEvm, execute::BlockBuilder};
 use reth_node_api::{Block, NodePrimitives, PayloadBuilderError};
 use reth_optimism_consensus::{calculate_receipt_root_no_memo_optimism, isthmus};
@@ -29,6 +29,7 @@ use reth_optimism_evm::{OpEvmConfig, OpNextBlockEnvAttributes};
 use reth_optimism_forks::OpHardforks;
 use reth_optimism_node::{OpBuiltPayload, OpPayloadBuilderAttributes};
 use reth_optimism_primitives::{OpPrimitives, OpReceipt, OpTransactionSigned};
+use reth_payload_primitives::BuiltPayloadExecutedBlock;
 use reth_payload_util::BestPayloadTransactions;
 use reth_primitives_traits::RecoveredBlock;
 use reth_provider::{
@@ -87,8 +88,8 @@ pub struct FlashblocksExtraCtx {
     gas_per_batch: u64,
     /// DA bytes limit per flashblock
     da_per_batch: Option<u64>,
-    /// Whether to calculate the state root for each flashblock
-    calculate_state_root: bool,
+    /// Whether to disable state root calculation for each flashblock
+    disable_state_root: bool,
 }
 
 impl FlashblocksExtraCtx {
@@ -256,6 +257,7 @@ where
             block_env_attributes,
             cancel,
             da_config: self.config.da_config.clone(),
+            gas_limit_config: self.config.gas_limit_config.clone(),
             builder_signer: self.config.builder_signer,
             metrics: Default::default(),
             extra_ctx,
@@ -299,14 +301,14 @@ where
         );
 
         let timestamp = config.attributes.timestamp();
-        let calculate_state_root = self.config.specific.calculate_state_root;
+        let disable_state_root = self.config.specific.disable_state_root;
         let ctx = self
             .get_op_payload_builder_ctx(
                 config.clone(),
                 block_cancel.clone(),
                 FlashblocksExtraCtx {
                     target_flashblock_count: self.config.flashblocks_per_block(),
-                    calculate_state_root,
+                    disable_state_root,
                     ..Default::default()
                 },
             )
@@ -355,7 +357,7 @@ where
             &mut state,
             &ctx,
             &mut info,
-            calculate_state_root || ctx.attributes().no_tx_pool, // need to calculate state root for CL sync
+            !disable_state_root || ctx.attributes().no_tx_pool, // need to calculate state root for CL sync
         )?;
 
         self.payload_tx
@@ -450,7 +452,7 @@ where
             target_da_for_batch,
             gas_per_batch,
             da_per_batch,
-            calculate_state_root,
+            disable_state_root,
         };
 
         let mut fb_cancel = block_cancel.child_token();
@@ -699,7 +701,7 @@ where
             state,
             ctx,
             info,
-            ctx.extra_ctx.calculate_state_root || ctx.attributes().no_tx_pool,
+            !ctx.extra_ctx.disable_state_root || ctx.attributes().no_tx_pool,
         );
         let total_block_built_duration = total_block_built_duration.elapsed();
         ctx.metrics
@@ -1073,13 +1075,12 @@ where
     let recovered_block =
         RecoveredBlock::new_unhashed(block.clone(), info.executed_senders.clone());
     // create the executed block data
-    let executed: ExecutedBlockWithTrieUpdates<OpPrimitives> = ExecutedBlockWithTrieUpdates {
-        block: ExecutedBlock {
-            recovered_block: Arc::new(recovered_block),
-            execution_output: Arc::new(execution_outcome),
-            hashed_state: Arc::new(hashed_state),
-        },
-        trie: ExecutedTrieUpdates::Present(Arc::new(trie_output)),
+
+    let executed = BuiltPayloadExecutedBlock {
+        recovered_block: Arc::new(recovered_block),
+        execution_output: Arc::new(execution_outcome),
+        hashed_state: Either::Left(Arc::new(hashed_state)),
+        trie_updates: Either::Left(Arc::new(trie_output)),
     };
     debug!(target: "payload_builder", message = "Executed block created");
 
