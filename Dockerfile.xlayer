@@ -30,7 +30,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=builder /app/target/release/${RBUILDER_BIN} /app/rbuilder
-RUN chmod +x /app/rbuilder
+COPY --from=builder /app/target/release/${RBUILDER_BIN} /usr/local/bin/
+RUN chmod +x /usr/local/bin/${RBUILDER_BIN}
 
-ENTRYPOINT ["/app/rbuilder"]
+ENTRYPOINT ["/usr/local/bin/${RBUILDER_BIN}"]
