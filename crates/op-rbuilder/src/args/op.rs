@@ -98,6 +98,8 @@ pub struct FlashblocksArgs {
     /// The default value will change in the future once the flashblocks
     /// feature is stable.
     #[arg(
+        // For X Layer
+        id = "flashblocks.enabled",
         long = "flashblocks.enabled",
         default_value = "false",
         env = "ENABLE_FLASHBLOCKS"
