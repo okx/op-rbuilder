@@ -134,7 +134,7 @@ where
     type Job = BlockPayloadJob<Tasks, Builder>;
 
     /// This is invoked when the node receives payload attributes from the beacon node via
-    /// `engine_forkchoiceUpdatedV1`
+    /// `engine_forkchoiceUpdatedVX`
     fn new_payload_job(
         &self,
         attributes: <Builder as PayloadBuilder>::Attributes,
