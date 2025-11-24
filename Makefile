@@ -117,3 +117,7 @@ bench-prettify: ## Prettifies the latest Criterion report
 	rm -rf target/benchmark-html-dev
 	./scripts/ci/criterion-prettify-report.sh target/criterion target/benchmark-html-dev
 	@echo "\nopen target/benchmark-html-dev/report/index.html"
+
+xlayer:
+	cp .github/scripts/pre-commit-xlayer .git/hooks/pre-commit && \
+	chmod +x .git/hooks/pre-commit
