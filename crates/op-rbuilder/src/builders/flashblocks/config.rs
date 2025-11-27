@@ -34,6 +34,9 @@ pub struct FlashblocksConfig {
     /// Should we disable state root calculation for each flashblock
     pub disable_state_root: bool,
 
+    /// Should we disable running builder in rollup boost mode
+    pub disable_rollup_boost: bool,
+
     /// The address of the flashblocks number contract.
     ///
     /// If set a builder tx will be added to the start of every flashblock instead of the regular builder tx.
@@ -66,6 +69,7 @@ impl Default for FlashblocksConfig {
             leeway_time: Duration::from_millis(50),
             fixed: false,
             disable_state_root: false,
+            disable_rollup_boost: false,
             flashblocks_number_contract_address: None,
             flashblocks_number_contract_use_permit: false,
             p2p_enabled: false,
@@ -94,6 +98,8 @@ impl TryFrom<OpRbuilderArgs> for FlashblocksConfig {
 
         let disable_state_root = args.flashblocks.flashblocks_disable_state_root;
 
+        let disable_rollup_boost = args.flashblocks.flashblocks_disable_rollup_boost;
+
         let flashblocks_number_contract_address =
             args.flashblocks.flashblocks_number_contract_address;
 
@@ -106,6 +112,7 @@ impl TryFrom<OpRbuilderArgs> for FlashblocksConfig {
             leeway_time,
             fixed,
             disable_state_root,
+            disable_rollup_boost,
             flashblocks_number_contract_address,
             flashblocks_number_contract_use_permit,
             p2p_enabled: args.flashblocks.p2p.p2p_enabled,
