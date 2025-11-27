@@ -30,6 +30,7 @@ use reth_optimism_evm::{OpEvmConfig, OpNextBlockEnvAttributes};
 use reth_optimism_forks::OpHardforks;
 use reth_optimism_node::{OpBuiltPayload, OpPayloadBuilderAttributes};
 use reth_optimism_primitives::{OpPrimitives, OpReceipt, OpTransactionSigned};
+use reth_payload_primitives::BuiltPayload;
 use reth_payload_util::BestPayloadTransactions;
 use reth_primitives_traits::RecoveredBlock;
 use reth_provider::{
@@ -288,7 +289,7 @@ where
     async fn build_payload(
         &self,
         args: BuildArguments<OpPayloadBuilderAttributes<OpTransactionSigned>, OpBuiltPayload>,
-        best_payload: BlockCell<OpBuiltPayload>,
+        resolve_payload: BlockCell<OpBuiltPayload>,
     ) -> Result<(), PayloadBuilderError> {
         let block_build_start_time = Instant::now();
         let BuildArguments {
@@ -380,7 +381,7 @@ where
             .send(payload.clone())
             .await
             .map_err(PayloadBuilderError::other)?;
-        best_payload.set(payload);
+        let mut best_payload = payload;
 
         info!(
             target: "payload_builder",
@@ -553,15 +554,21 @@ where
                     &state_provider,
                     &mut best_txs,
                     &block_cancel,
-                    &best_payload,
+                    &mut best_payload,
                     &fb_span,
                 )
                 .await
             {
                 Ok(Some(next_flashblocks_ctx)) => next_flashblocks_ctx,
                 Ok(None) => {
-                    self.resolve_best_payload(&mut state, &ctx, &mut info, &best_payload)
-                        .await;
+                    self.resolve_best_payload(
+                        &mut state,
+                        &ctx,
+                        &mut info,
+                        best_payload,
+                        &resolve_payload,
+                    )
+                    .await;
                     self.record_flashblocks_metrics(
                         &ctx,
                         &info,
@@ -588,7 +595,14 @@ where
                     ctx = ctx.with_cancel(fb_cancel).with_extra_ctx(next_flashblocks_ctx);
                 },
                 _ = block_cancel.cancelled() => {
-                    self.resolve_best_payload(&mut state, &ctx, &mut info, &best_payload).await;
+                    self.resolve_best_payload(
+                        &mut state,
+                        &ctx,
+                        &mut info,
+                        best_payload,
+                        &resolve_payload,
+                    )
+                    .await;
                     self.record_flashblocks_metrics(
                         &ctx,
                         &info,
@@ -614,7 +628,7 @@ where
         state_provider: impl reth::providers::StateProvider + Clone,
         best_txs: &mut NextBestFlashblocksTxs<Pool>,
         block_cancel: &CancellationToken,
-        best_payload: &BlockCell<OpBuiltPayload>,
+        best_payload: &mut OpBuiltPayload,
         span: &tracing::Span,
     ) -> eyre::Result<Option<FlashblocksExtraCtx>> {
         let flashblock_index = ctx.flashblock_index();
@@ -761,7 +775,7 @@ where
                     .send(new_payload.clone())
                     .await
                     .wrap_err("failed to send built payload to handler")?;
-                best_payload.set(new_payload);
+                *best_payload = new_payload;
 
                 // Record flashblock build duration
                 ctx.metrics
@@ -814,28 +828,28 @@ where
         state: &mut State<DB>,
         ctx: &OpPayloadBuilderCtx<FlashblocksExtraCtx>,
         info: &mut ExecutionInfo<FlashblocksExecutionInfo>,
-        best_payload: &BlockCell<OpBuiltPayload>,
+        best_payload: OpBuiltPayload,
+        resolve_payload: &BlockCell<OpBuiltPayload>,
     ) {
-        if let Some(payload) = best_payload.get()
-            && payload.block().header().state_root == B256::ZERO
+        if resolve_payload.get().is_none() && best_payload.block().header().state_root == B256::ZERO
         {
             // Calculate state root for best payload on resolve payload to prevent
             // cache misses for locally built payloads.
             if let Ok((state_root, trie_updates)) = calculate_state_root_only(state, ctx, info) {
-                use reth_payload_primitives::BuiltPayload as _;
-                let payload_id = payload.id();
-                let fees = payload.fees();
-                let executed_block = payload
-                    .executed_block()
-                    .map(|executed_block| ExecutedBlock {
-                        recovered_block: Arc::new(executed_block.recovered_block().clone()),
-                        execution_output: Arc::new(executed_block.execution_outcome().clone()),
-                        hashed_state: Arc::new(executed_block.hashed_state().clone()),
-                        trie_updates: Arc::new(trie_updates),
-                    });
+                let payload_id = best_payload.id();
+                let fees = best_payload.fees();
+                let executed_block =
+                    best_payload
+                        .executed_block()
+                        .map(|executed_block| ExecutedBlock {
+                            recovered_block: Arc::new(executed_block.recovered_block().clone()),
+                            execution_output: Arc::new(executed_block.execution_outcome().clone()),
+                            hashed_state: Arc::new(executed_block.hashed_state().clone()),
+                            trie_updates: Arc::new(trie_updates),
+                        });
 
                 // Get the current sealed block and extract its components
-                let block = payload.into_sealed_block().into_block();
+                let block = best_payload.into_sealed_block().into_block();
                 let (mut header, body) = block.split();
                 header.state_root = state_root;
 
@@ -848,7 +862,7 @@ where
                 let updated_payload =
                     OpBuiltPayload::new(payload_id, sealed_block, fees, executed_block);
                 self.payload_tx.send(updated_payload.clone()).await.ok(); // ignore error here
-                best_payload.set(updated_payload);
+                resolve_payload.set(updated_payload);
 
                 debug!(
                     target: "payload_builder",
