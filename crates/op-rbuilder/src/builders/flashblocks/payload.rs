@@ -892,7 +892,7 @@ where
         let sealed_block = Arc::new(updated_block.seal_slow());
 
         let updated_payload = OpBuiltPayload::new(payload_id, sealed_block, fees, executed_block);
-        if let Err(e) = self.built_fb_payload_tx.send(updated_payload.clone()).await {
+        if let Err(e) = self.built_payload_tx.send(updated_payload.clone()).await {
             warn!(
                 target: "payload_builder",
                 error = %e,
