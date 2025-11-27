@@ -366,12 +366,8 @@ where
         let builder_tx_da_size: u64 = builder_txs.iter().fold(0, |acc, tx| acc + tx.da_size);
         info.cumulative_da_bytes_used += builder_tx_da_size;
 
-        let (payload, fb_payload) = build_block(
-            &mut state,
-            &ctx,
-            &mut info,
-            !disable_state_root || ctx.attributes().no_tx_pool, // need to calculate state root for CL sync
-        )?;
+        // We should always calculate state root for fallback payload
+        let (payload, fb_payload) = build_block(&mut state, &ctx, &mut info, true)?;
 
         self.payload_tx
             .send(payload.clone())
@@ -582,6 +578,7 @@ where
                     ctx = ctx.with_cancel(fb_cancel).with_extra_ctx(next_flashblocks_ctx);
                 },
                 _ = block_cancel.cancelled() => {
+                    self.resolve_best_payload(&mut state, &ctx, &mut info, &best_payload).await;
                     self.record_flashblocks_metrics(
                         &ctx,
                         &info,
@@ -685,6 +682,8 @@ where
         // We got block cancelled, we won't need anything from the block at this point
         // Caution: this assume that block cancel token only cancelled when new FCU is received
         if block_cancel.is_cancelled() {
+            self.resolve_best_payload(state, ctx, info, &best_payload)
+                .await;
             self.record_flashblocks_metrics(
                 ctx,
                 info,
@@ -733,19 +732,6 @@ where
             Ok((new_payload, mut fb_payload)) => {
                 fb_payload.index = flashblock_index;
                 fb_payload.base = None;
-
-                // If main token got canceled in here that means we received get_payload and we should drop everything and now update best_payload
-                // To ensure that we will return same blocks as rollup-boost (to leverage caches)
-                if block_cancel.is_cancelled() {
-                    self.record_flashblocks_metrics(
-                        ctx,
-                        info,
-                        ctx.target_flashblock_count(),
-                        span,
-                        "Payload building complete, channel closed or job cancelled",
-                    );
-                    return Ok(None);
-                }
                 let flashblock_byte_size = self
                     .ws_pub
                     .publish(&fb_payload)
@@ -795,6 +781,52 @@ where
                 );
 
                 Ok(Some(next_extra_ctx))
+            }
+        }
+    }
+
+    async fn resolve_best_payload<
+        DB: Database<Error = ProviderError> + std::fmt::Debug + AsRef<P>,
+        P: StateRootProvider + HashedPostStateProvider + StorageRootProvider,
+    >(
+        &self,
+        state: &mut State<DB>,
+        ctx: &OpPayloadBuilderCtx<FlashblocksExtraCtx>,
+        info: &mut ExecutionInfo<FlashblocksExecutionInfo>,
+        best_payload: &BlockCell<OpBuiltPayload>,
+    ) {
+        if let Some(payload) = best_payload.get() {
+            if payload.block().header().state_root == B256::ZERO {
+                // Calculate state root for best payload on resolve payload to prevent
+                // cache misses for locally built payloads.
+                if let Ok(state_root) = calculate_state_root_only(state, ctx, info) {
+                    use reth_payload_primitives::BuiltPayload as _;
+                    let payload_id = payload.id();
+                    let fees = payload.fees();
+                    let executed_block = payload.executed_block();
+
+                    // Get the current sealed block and extract its components
+                    let block = payload.into_sealed_block().into_block();
+                    let (mut header, body) = block.split();
+                    header.state_root = state_root;
+
+                    // Create a new sealed block with the updated header
+                    let updated_block =
+                        alloy_consensus::Block::<OpTransactionSigned>::new(header, body);
+                    let sealed_block = Arc::new(updated_block.seal_slow());
+
+                    // Update the best payload with the calculated staet root
+                    let updated_payload =
+                        OpBuiltPayload::new(payload_id, sealed_block, fees, executed_block);
+                    self.payload_tx.send(updated_payload.clone()).await.ok(); // ignore error here
+                    best_payload.set(updated_payload);
+
+                    debug!(
+                        target: "payload_builder",
+                        state_root = %state_root,
+                        "Updated payload with calculated state root"
+                    );
+                }
             }
         }
     }
@@ -966,7 +998,17 @@ where
         .set(state_transition_merge_time);
 
     let block_number = ctx.block_number();
-    assert_eq!(block_number, ctx.parent().number + 1);
+    let expected = ctx.parent().number + 1;
+    if block_number != expected {
+        return Err(PayloadBuilderError::Other(
+            eyre::eyre!(
+                "build context block number mismatch: expected {}, got {}",
+                expected,
+                block_number
+            )
+            .into(),
+        ));
+    }
 
     let execution_outcome = ExecutionOutcome::new(
         state.bundle_state.clone(),
@@ -983,10 +1025,26 @@ where
                 ctx.attributes().timestamp(),
             )
         })
-        .expect("Number is in range");
+        .ok_or_else(|| {
+            PayloadBuilderError::Other(
+                eyre::eyre!(
+                    "receipts and block number not in range, block number {}",
+                    block_number
+                )
+                .into(),
+            )
+        })?;
     let logs_bloom = execution_outcome
         .block_logs_bloom(block_number)
-        .expect("Number is in range");
+        .ok_or_else(|| {
+            PayloadBuilderError::Other(
+                eyre::eyre!(
+                    "logs bloom and block number not in range, block number {}",
+                    block_number
+                )
+                .into(),
+            )
+        })?;
 
     // TODO: maybe recreate state with bundle in here
     // calculate the state root
@@ -1139,7 +1197,11 @@ where
                 .attributes()
                 .payload_attributes
                 .parent_beacon_block_root
-                .unwrap(),
+                .ok_or_else(|| {
+                    PayloadBuilderError::Other(
+                        eyre::eyre!("parent beacon block root not found").into(),
+                    )
+                })?,
             parent_hash: ctx.parent().hash(),
             fee_recipient: ctx.attributes().suggested_fee_recipient(),
             prev_randao: ctx.attributes().payload_attributes.prev_randao,
@@ -1176,4 +1238,48 @@ where
         ),
         fb_payload,
     ))
+}
+
+/// Calculates only the state root for an existing payload
+fn calculate_state_root_only<DB, P, ExtraCtx>(
+    state: &mut State<DB>,
+    ctx: &OpPayloadBuilderCtx<ExtraCtx>,
+    info: &ExecutionInfo<FlashblocksExecutionInfo>,
+) -> Result<B256, PayloadBuilderError>
+where
+    DB: Database<Error = ProviderError> + AsRef<P>,
+    P: StateRootProvider + HashedPostStateProvider + StorageRootProvider,
+    ExtraCtx: std::fmt::Debug + Default,
+{
+    let state_root_start_time = Instant::now();
+    state.merge_transitions(BundleRetention::Reverts);
+    let execution_outcome = ExecutionOutcome::new(
+        state.bundle_state.clone(),
+        vec![info.receipts.clone()],
+        ctx.block_number(),
+        vec![],
+    );
+
+    let state_provider = state.database.as_ref();
+    let hashed_state = state_provider.hashed_post_state(execution_outcome.state());
+    let (state_root, _trie_output) = state
+        .database
+        .as_ref()
+        .state_root_with_updates(hashed_state)
+        .inspect_err(|err| {
+            warn!(target: "payload_builder",
+                parent_header=%ctx.parent().hash(),
+                %err,
+                "failed to calculate state root for payload"
+            );
+        })?;
+    let state_root_calculation_time = state_root_start_time.elapsed();
+    ctx.metrics
+        .state_root_calculation_duration
+        .record(state_root_calculation_time);
+    ctx.metrics
+        .state_root_calculation_gauge
+        .set(state_root_calculation_time);
+
+    Ok(state_root)
 }
