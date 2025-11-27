@@ -682,7 +682,7 @@ where
         // We got block cancelled, we won't need anything from the block at this point
         // Caution: this assume that block cancel token only cancelled when new FCU is received
         if block_cancel.is_cancelled() {
-            self.resolve_best_payload(state, ctx, info, &best_payload)
+            self.resolve_best_payload(state, ctx, info, best_payload)
                 .await;
             self.record_flashblocks_metrics(
                 ctx,
@@ -795,38 +795,38 @@ where
         info: &mut ExecutionInfo<FlashblocksExecutionInfo>,
         best_payload: &BlockCell<OpBuiltPayload>,
     ) {
-        if let Some(payload) = best_payload.get() {
-            if payload.block().header().state_root == B256::ZERO {
-                // Calculate state root for best payload on resolve payload to prevent
-                // cache misses for locally built payloads.
-                if let Ok(state_root) = calculate_state_root_only(state, ctx, info) {
-                    use reth_payload_primitives::BuiltPayload as _;
-                    let payload_id = payload.id();
-                    let fees = payload.fees();
-                    let executed_block = payload.executed_block();
+        if let Some(payload) = best_payload.get()
+            && payload.block().header().state_root == B256::ZERO
+        {
+            // Calculate state root for best payload on resolve payload to prevent
+            // cache misses for locally built payloads.
+            if let Ok(state_root) = calculate_state_root_only(state, ctx, info) {
+                use reth_payload_primitives::BuiltPayload as _;
+                let payload_id = payload.id();
+                let fees = payload.fees();
+                let executed_block = payload.executed_block();
 
-                    // Get the current sealed block and extract its components
-                    let block = payload.into_sealed_block().into_block();
-                    let (mut header, body) = block.split();
-                    header.state_root = state_root;
+                // Get the current sealed block and extract its components
+                let block = payload.into_sealed_block().into_block();
+                let (mut header, body) = block.split();
+                header.state_root = state_root;
 
-                    // Create a new sealed block with the updated header
-                    let updated_block =
-                        alloy_consensus::Block::<OpTransactionSigned>::new(header, body);
-                    let sealed_block = Arc::new(updated_block.seal_slow());
+                // Create a new sealed block with the updated header
+                let updated_block =
+                    alloy_consensus::Block::<OpTransactionSigned>::new(header, body);
+                let sealed_block = Arc::new(updated_block.seal_slow());
 
-                    // Update the best payload with the calculated staet root
-                    let updated_payload =
-                        OpBuiltPayload::new(payload_id, sealed_block, fees, executed_block);
-                    self.payload_tx.send(updated_payload.clone()).await.ok(); // ignore error here
-                    best_payload.set(updated_payload);
+                // Update the best payload with the calculated staet root
+                let updated_payload =
+                    OpBuiltPayload::new(payload_id, sealed_block, fees, executed_block);
+                self.payload_tx.send(updated_payload.clone()).await.ok(); // ignore error here
+                best_payload.set(updated_payload);
 
-                    debug!(
-                        target: "payload_builder",
-                        state_root = %state_root,
-                        "Updated payload with calculated state root"
-                    );
-                }
+                debug!(
+                    target: "payload_builder",
+                    state_root = %state_root,
+                    "Updated payload with calculated state root"
+                );
             }
         }
     }
