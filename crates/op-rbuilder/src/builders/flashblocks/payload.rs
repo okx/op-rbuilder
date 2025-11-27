@@ -367,7 +367,12 @@ where
         info.cumulative_da_bytes_used += builder_tx_da_size;
 
         // We should always calculate state root for fallback payload
-        let (payload, fb_payload) = build_block(&mut state, &ctx, &mut info, true)?;
+        let (payload, fb_payload) = build_block(
+            &mut state,
+            &ctx,
+            &mut info,
+            !disable_state_root || ctx.attributes().no_tx_pool, // need to calculate state root for CL sync
+        )?;
 
         self.payload_tx
             .send(payload.clone())
@@ -552,6 +557,8 @@ where
             {
                 Ok(Some(next_flashblocks_ctx)) => next_flashblocks_ctx,
                 Ok(None) => {
+                    self.resolve_best_payload(&mut state, &ctx, &mut info, &best_payload)
+                        .await;
                     self.record_flashblocks_metrics(
                         &ctx,
                         &info,
@@ -682,8 +689,6 @@ where
         // We got block cancelled, we won't need anything from the block at this point
         // Caution: this assume that block cancel token only cancelled when new FCU is received
         if block_cancel.is_cancelled() {
-            self.resolve_best_payload(state, ctx, info, best_payload)
-                .await;
             self.record_flashblocks_metrics(
                 ctx,
                 info,
@@ -1259,7 +1264,6 @@ where
     ExtraCtx: std::fmt::Debug + Default,
 {
     let state_root_start_time = Instant::now();
-    state.merge_transitions(BundleRetention::Reverts);
     let execution_outcome = ExecutionOutcome::new(
         state.bundle_state.clone(),
         vec![info.receipts.clone()],
