@@ -90,6 +90,8 @@ pub struct FlashblocksExtraCtx {
     da_per_batch: Option<u64>,
     /// Whether to disable state root calculation for each flashblock
     disable_state_root: bool,
+    /// Whether to disable running builder in rollup boost mode
+    disable_rollup_boost: bool,
 }
 
 impl FlashblocksExtraCtx {
@@ -467,6 +469,7 @@ where
             gas_per_batch,
             da_per_batch,
             disable_state_root,
+            disable_rollup_boost: self.config.specific.disable_rollup_boost,
         };
 
         let mut fb_cancel = block_cancel.child_token();
@@ -737,6 +740,19 @@ where
             Ok((new_payload, mut fb_payload)) => {
                 fb_payload.index = flashblock_index;
                 fb_payload.base = None;
+
+                // If main token got canceled in here that means we received get_payload and we should drop everything and now update best_payload
+                // To ensure that we will return same blocks as rollup-boost (to leverage caches)
+                if !ctx.extra_ctx.disable_rollup_boost && block_cancel.is_cancelled() {
+                    self.record_flashblocks_metrics(
+                        ctx,
+                        info,
+                        ctx.target_flashblock_count(),
+                        span,
+                        "Payload building complete, channel closed or job cancelled",
+                    );
+                    return Ok(None);
+                }
                 let flashblock_byte_size = self
                     .ws_pub
                     .publish(&fb_payload)

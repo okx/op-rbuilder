@@ -159,6 +159,14 @@ pub struct FlashblocksArgs {
     )]
     pub flashblocks_disable_state_root: bool,
 
+    /// Whether to builder running with rollup boost
+    #[arg(
+        long = "flashblocks.disable-rollup-boost",
+        default_value = "false",
+        env = "FLASHBLOCK_DISABLE_ROLLUP_BOOST"
+    )]
+    pub flashblocks_disable_rollup_boost: bool,
+
     /// Flashblocks number contract address
     ///
     /// This is the address of the contract that will be used to increment the flashblock number.
