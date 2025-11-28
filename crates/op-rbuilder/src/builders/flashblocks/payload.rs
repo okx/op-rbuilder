@@ -905,7 +905,7 @@ where
 
         let executed: ExecutedBlock<OpPrimitives> = ExecutedBlock {
             recovered_block: Arc::new(recovered_block),
-            execution_output: execution_outcome.clone(),
+            execution_output: execution_outcome,
             hashed_state: Arc::new(hashed_state),
             trie_updates: Arc::new(trie_updates),
         };
