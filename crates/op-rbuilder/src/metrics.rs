@@ -162,7 +162,6 @@ pub struct OpRBuilderMetrics {
 }
 
 impl OpRBuilderMetrics {
-    #[expect(clippy::too_many_arguments)]
     pub fn set_payload_builder_metrics(
         &self,
         payload_transaction_simulation_time: impl IntoF64 + Copy,
