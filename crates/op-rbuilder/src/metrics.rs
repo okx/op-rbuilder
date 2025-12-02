@@ -157,8 +157,6 @@ pub struct OpRBuilderMetrics {
     pub valid_bundles: Counter,
     /// Number of bundles that failed to execute
     pub failed_bundles: Counter,
-    /// Number of reverted bundles
-    pub bundles_reverted: Histogram,
     /// Histogram of eth_sendBundle request duration
     pub bundle_receive_duration: Histogram,
 }
@@ -172,7 +170,6 @@ impl OpRBuilderMetrics {
         num_txs_simulated: impl IntoF64 + Copy,
         num_txs_simulated_success: impl IntoF64 + Copy,
         num_txs_simulated_fail: impl IntoF64 + Copy,
-        num_bundles_reverted: impl IntoF64,
         reverted_gas_used: impl IntoF64,
     ) {
         self.payload_transaction_simulation_duration
@@ -191,7 +188,6 @@ impl OpRBuilderMetrics {
             .record(num_txs_simulated_fail);
         self.payload_num_tx_simulated_fail_gauge
             .set(num_txs_simulated_fail);
-        self.bundles_reverted.record(num_bundles_reverted);
         self.payload_reverted_tx_gas_used.set(reverted_gas_used);
     }
 }

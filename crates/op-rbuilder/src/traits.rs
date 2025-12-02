@@ -3,11 +3,10 @@ use reth_node_api::{FullNodeComponents, FullNodeTypes, NodeTypes};
 use reth_optimism_chainspec::OpChainSpec;
 use reth_optimism_node::OpEngineTypes;
 use reth_optimism_primitives::{OpPrimitives, OpTransactionSigned};
+use reth_optimism_txpool::OpPooledTx;
 use reth_payload_util::PayloadTransactions;
 use reth_provider::{BlockReaderIdExt, ChainSpecProvider, StateProviderFactory};
 use reth_transaction_pool::TransactionPool;
-
-use crate::tx::FBPoolTransaction;
 
 pub trait NodeBounds:
     FullNodeTypes<
@@ -45,19 +44,19 @@ impl<T> NodeComponents for T where
 {
 }
 
+// For X Layer, use default reth txpool heuristics
 pub trait PoolBounds:
-    TransactionPool<Transaction: FBPoolTransaction<Consensus = OpTransactionSigned>> + Unpin + 'static
+    TransactionPool<Transaction: OpPooledTx<Consensus = OpTransactionSigned>> + Unpin + 'static
 where
-    <Self as TransactionPool>::Transaction: FBPoolTransaction,
+    <Self as TransactionPool>::Transaction: OpPooledTx,
 {
 }
 
+// For X Layer, use default reth txpool heuristics
 impl<T> PoolBounds for T
 where
-    T: TransactionPool<Transaction: FBPoolTransaction<Consensus = OpTransactionSigned>>
-        + Unpin
-        + 'static,
-    <Self as TransactionPool>::Transaction: FBPoolTransaction,
+    T: TransactionPool<Transaction: OpPooledTx<Consensus = OpTransactionSigned>> + Unpin + 'static,
+    <Self as TransactionPool>::Transaction: OpPooledTx,
 {
 }
 
@@ -77,12 +76,14 @@ impl<T> ClientBounds for T where
 {
 }
 
+// For X Layer, use default reth txpool heuristics
 pub trait PayloadTxsBounds:
-    PayloadTransactions<Transaction: FBPoolTransaction<Consensus = OpTransactionSigned>>
+    PayloadTransactions<Transaction: OpPooledTx<Consensus = OpTransactionSigned>>
 {
 }
 
+// For X Layer, use default reth txpool heuristics
 impl<T> PayloadTxsBounds for T where
-    T: PayloadTransactions<Transaction: FBPoolTransaction<Consensus = OpTransactionSigned>>
+    T: PayloadTransactions<Transaction: OpPooledTx<Consensus = OpTransactionSigned>>
 {
 }
