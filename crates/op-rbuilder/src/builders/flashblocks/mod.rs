@@ -1,7 +1,7 @@
 use super::BuilderConfig;
 use crate::traits::{NodeBounds, PoolBounds};
-use config::FlashblocksConfig;
-use service::FlashblocksServiceBuilder;
+pub(super) use config::FlashblocksConfig;
+pub use service::FlashblocksServiceBuilder;
 
 mod best_txs;
 mod builder_tx;
