@@ -154,6 +154,7 @@ impl FlashblocksServiceBuilder {
             incoming_message_rx,
             outgoing_message_tx,
             payload_service.payload_events_handle(),
+            ws_pub.clone(),
             syncer_ctx,
             ctx.provider().clone(),
             cancel,
