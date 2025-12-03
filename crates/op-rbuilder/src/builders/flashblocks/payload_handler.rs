@@ -168,7 +168,7 @@ where
 
     let start = tokio::time::Instant::now();
 
-    tracing::info!(header = ?payload.block().header(), "executing flashblock");
+    tracing::debug!(header = ?payload.block().header(), "executing flashblock");
 
     let mut cached_reads = reth::revm::cached::CachedReads::default();
     let parent_hash = payload.block().sealed_header().parent_hash;
@@ -293,7 +293,7 @@ where
 
     builder_ctx.metrics.block_synced_success.increment(1);
 
-    tracing::info!(header = ?built_payload.block().header(), "successfully executed flashblock");
+    tracing::debug!(header = ?built_payload.block().header(), "successfully executed flashblock");
     Ok((built_payload, fb_payload))
 }
 
