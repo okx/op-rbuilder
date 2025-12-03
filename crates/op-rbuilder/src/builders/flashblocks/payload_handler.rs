@@ -146,7 +146,7 @@ where
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::error!(error = ?e, "failed to execute received flashblock");
+                                        tracing::debug!(error = ?e, "failed to execute received flashblock");
                                     }
                                 }
                             });
@@ -231,7 +231,7 @@ where
 
     let extra_data = payload.block().sealed_header().extra_data.clone();
     if extra_data.len() != 9 {
-        tracing::error!(len = extra_data.len(), data = ?extra_data, "invalid extra data length in flashblock");
+        tracing::debug!(len = extra_data.len(), data = ?extra_data, "invalid extra data length in flashblock");
         bail!("extra data length should be 9 bytes");
     }
 
