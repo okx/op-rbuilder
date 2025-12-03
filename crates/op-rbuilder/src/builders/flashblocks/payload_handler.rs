@@ -15,11 +15,13 @@ use reth_basic_payload_builder::PayloadConfig;
 use reth_evm::FromRecoveredTx;
 use reth_node_builder::Events;
 use reth_optimism_chainspec::OpChainSpec;
+use reth_optimism_consensus::OpBeaconConsensus;
 use reth_optimism_evm::{OpEvmConfig, OpNextBlockEnvAttributes};
 use reth_optimism_node::{OpEngineTypes, OpPayloadBuilderAttributes};
 use reth_optimism_payload_builder::OpBuiltPayload;
 use reth_optimism_primitives::{OpReceipt, OpTransactionSigned};
 use reth_payload_builder::EthPayloadBuilderAttributes;
+use reth_primitives_traits::SealedHeader;
 use rollup_boost::FlashblocksPayloadV1;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -110,30 +112,33 @@ where
                 Some(message) = p2p_rx.recv() => {
                     match message {
                         Message::OpBuiltPayload(payload) => {
-                            let payload: OpBuiltPayload = payload.into();
+                            let external_payload: OpBuiltPayload = payload.into();
                             let ctx = ctx.clone();
                             let client = client.clone();
                             let payload_events_handle = payload_events_handle.clone();
                             let cancel = cancel.clone();
 
-                            // execute the built full payload on a thread where blocking is acceptable,
-                            // as there should only be one flashblock builder at any point in time.
+                            // For X Layer. Validating and executing the built full payload on a thread where blocking
+                            // is acceptable, as there should only be one flashblock builder at any point in time.
                             tokio::task::spawn_blocking(move || {
                                 let res = execute_flashblock(
-                                    payload,
+                                    &external_payload,
                                     ctx,
                                     client,
                                     cancel,
                                 );
-                                match res {
-                                    Ok((payload, _)) => {
-                                        tracing::info!(hash = payload.block().hash().to_string(), block_number = payload.block().header().number, "successfully executed received flashblock");
-                                        if let Err(e) = payload_events_handle.send(Events::BuiltPayload(payload)) {
+                                // For X Layer
+                                match res.and_then(|(built_payload, _)| {
+                                    tracing::info!(hash = built_payload.block().hash().to_string(), block_number = built_payload.block().header().number, "successfully executed received flashblock");
+                                    validate_post_execute(&built_payload, &external_payload).map(|_| built_payload)
+                                }) {
+                                    Ok(built_payload) => {
+                                        if let Err(e) = payload_events_handle.send(Events::BuiltPayload(built_payload)) {
                                             warn!(e = ?e, "failed to send BuiltPayload event on synced block");
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::error!(error = ?e, "failed to execute received flashblock");
+                                        tracing::error!(error = ?e, "failed to received external full payload from flashblock builder");
                                     }
                                 }
                             });
@@ -152,7 +157,7 @@ where
 }
 
 fn execute_flashblock<Client>(
-    payload: OpBuiltPayload,
+    payload: &OpBuiltPayload,
     ctx: OpPayloadSyncerCtx,
     client: Client,
     cancel: tokio_util::sync::CancellationToken,
@@ -175,6 +180,11 @@ where
         .wrap_err("failed to get parent header")?
         .ok_or_else(|| eyre::eyre!("parent header not found"))?;
 
+    // For X Layer, validate header and parent relationship before execution
+    let chain_spec = client.chain_spec();
+    validate_pre_execution(payload, &parent_header, parent_hash, chain_spec.clone())
+        .wrap_err("pre-execution validation failed")?;
+
     let state_provider = client
         .state_by_block_hash(parent_hash)
         .wrap_err("failed to get state for parent hash")?;
@@ -184,7 +194,6 @@ where
         .with_bundle_update()
         .build();
 
-    let chain_spec = client.chain_spec();
     let timestamp = payload.block().header().timestamp();
     let block_env_attributes = OpNextBlockEnvAttributes {
         timestamp,
@@ -303,7 +312,7 @@ fn execute_transactions(
     is_canyon_active: bool,
     is_regolith_active: bool,
 ) -> eyre::Result<()> {
-    use alloy_evm::{Evm as _, EvmError as _};
+    use alloy_evm::Evm as _;
     use op_revm::{OpTransaction, transaction::deposit::DepositTransactionParts};
     use reth_evm::ConfigureEvm as _;
     use reth_primitives_traits::SignerRecoverable as _;
@@ -354,19 +363,7 @@ fn execute_transactions(
             }
         };
 
-        let ResultAndState { result, state } = match evm.transact_raw(executable_tx) {
-            Ok(res) => res,
-            Err(err) => {
-                if let Some(err) = err.as_invalid_tx_err() {
-                    // TODO: what invalid txs are allowed in the block?
-                    // reverting txs should be allowed (?) but not straight up invalid ones
-                    tracing::error!(error = %err, "skipping invalid transaction in flashblock");
-                    continue;
-                }
-                return Err(err).wrap_err("failed to execute flashblock transaction");
-            }
-        };
-
+        let ResultAndState { result, state } = evm.transact_raw(executable_tx)?;
         if let Some(max_gas_per_txn) = max_gas_per_txn
             && result.gas_used() > max_gas_per_txn
         {
@@ -455,6 +452,46 @@ fn build_receipt<E: alloy_evm::Evm>(
             })
         }
     }
+}
+
+/// Validates the payload header and its relationship with the parent before execution.
+/// This performs consensus rule validation including:
+/// - Header field validation (timestamp, gas limit, etc.)
+/// - Parent relationship validation (block number increment, timestamp progression)
+fn validate_pre_execution(
+    payload: &OpBuiltPayload,
+    parent_header: &reth_primitives_traits::Header,
+    parent_hash: alloy_primitives::B256,
+    chain_spec: Arc<OpChainSpec>,
+) -> eyre::Result<()> {
+    use reth::consensus::HeaderValidator;
+
+    let consensus = OpBeaconConsensus::new(chain_spec);
+    let parent_sealed = SealedHeader::new(parent_header.clone(), parent_hash);
+
+    // Validate incoming header
+    consensus
+        .validate_header(payload.block().sealed_header())
+        .wrap_err("header validation failed")?;
+
+    // Validate incoming header against parent
+    consensus
+        .validate_header_against_parent(payload.block().sealed_header(), &parent_sealed)
+        .wrap_err("header validation against parent failed")?;
+
+    Ok(())
+}
+
+fn validate_post_execute(
+    built_payload: &OpBuiltPayload,
+    external_payload: &OpBuiltPayload,
+) -> eyre::Result<()> {
+    if built_payload.block().hash() != external_payload.block().hash() {
+        return Err(eyre::eyre!(
+            "validation failed, built payload hash mismatch"
+        ));
+    }
+    Ok(())
 }
 
 fn is_canyon_active(chain_spec: &OpChainSpec, timestamp: u64) -> bool {
