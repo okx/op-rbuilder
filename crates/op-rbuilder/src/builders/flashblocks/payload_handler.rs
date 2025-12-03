@@ -111,6 +111,19 @@ where
                     match message {
                         Message::OpBuiltPayload(payload) => {
                             let payload: OpBuiltPayload = payload.into();
+                            let block_hash = payload.block().hash();
+                            // Check if this block is already the pending block in canonical state
+                            if let Ok(Some(pending)) = client.pending_block()
+                                && pending.hash() == block_hash
+                            {
+                                tracing::debug!(
+                                    hash = %block_hash,
+                                    block_number = payload.block().header().number,
+                                    "skipping flashblock execution - block already pending in canonical state"
+                                );
+                                continue;
+                            }
+
                             let ctx = ctx.clone();
                             let client = client.clone();
                             let payload_events_handle = payload_events_handle.clone();
