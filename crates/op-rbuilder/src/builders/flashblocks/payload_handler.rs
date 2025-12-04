@@ -9,6 +9,7 @@ use crate::{
 use alloy_evm::eth::receipt_builder::ReceiptBuilderCtx;
 use alloy_primitives::B64;
 use eyre::{WrapErr as _, bail};
+use op_revm::L1BlockInfo;
 use reth::revm::{State, database::StateProviderDatabase};
 use reth_basic_payload_builder::PayloadConfig;
 use reth_node_builder::Events;
@@ -281,6 +282,7 @@ where
         payload.block().header().gas_used,
         timestamp,
         evm_env.clone(),
+        chain_spec.clone(),
     )
     .wrap_err("failed to execute best transactions")?;
 
@@ -329,6 +331,7 @@ fn execute_transactions(
     gas_limit: u64,
     timestamp: u64,
     evm_env: alloy_evm::EvmEnv<op_revm::OpSpecId>,
+    chain_spec: Arc<OpChainSpec>,
 ) -> eyre::Result<()> {
     use alloy_evm::Evm as _;
     use reth_evm::ConfigureEvm as _;
@@ -398,6 +401,15 @@ fn execute_transactions(
         info.executed_senders.push(sender);
         info.executed_transactions.push(tx.clone());
     }
+
+    // Fetch DA footprint gas scalar for Jovian blocks
+    let da_footprint_gas_scalar = chain_spec
+        .is_jovian_active_at_timestamp(timestamp)
+        .then(|| {
+            L1BlockInfo::fetch_da_footprint_gas_scalar(evm.db_mut())
+                .expect("DA footprint should always be available from the database post jovian")
+        });
+    info.da_footprint_scalar = da_footprint_gas_scalar;
 
     Ok(())
 }
