@@ -93,7 +93,7 @@ where
             cancel,
         } = self;
 
-        tracing::debug!("flashblocks payload handler started");
+        tracing::info!("flashblocks payload handler started");
 
         loop {
             tokio::select! {
