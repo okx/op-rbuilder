@@ -49,6 +49,9 @@ pub(crate) struct PayloadHandler<Client> {
     // chain client
     client: Client,
     cancel: tokio_util::sync::CancellationToken,
+    // For X Layer
+    p2p_send_full_payload_flag: bool,
+    p2p_process_full_payload_flag: bool,
 }
 
 impl<Client> PayloadHandler<Client>
@@ -66,6 +69,9 @@ where
         ctx: OpPayloadSyncerCtx,
         client: Client,
         cancel: tokio_util::sync::CancellationToken,
+        // For X Layer
+        p2p_send_full_payload_flag: bool,
+        p2p_process_full_payload_flag: bool,
     ) -> Self {
         Self {
             built_fb_payload_rx,
@@ -77,6 +83,8 @@ where
             ctx,
             client,
             cancel,
+            p2p_send_full_payload_flag,
+            p2p_process_full_payload_flag,
         }
     }
 
@@ -91,6 +99,8 @@ where
             ctx,
             client,
             cancel,
+            p2p_send_full_payload_flag,
+            p2p_process_full_payload_flag,
         } = self;
 
         tracing::info!("flashblocks payload handler started");
@@ -106,12 +116,18 @@ where
                     if let Err(e) = payload_events_handle.send(Events::BuiltPayload(payload.clone())) {
                         warn!(e = ?e, "failed to send BuiltPayload event");
                     }
-                    // ignore error here; if p2p was disabled, the channel will be closed.
-                    let _ = p2p_tx.send(Message::from_built_payload(payload)).await;
+                    if p2p_send_full_payload_flag {
+                        // ignore error here; if p2p was disabled, the channel will be closed.
+                        let _ = p2p_tx.send(Message::from_built_payload(payload)).await;
+                    }
                 }
                 Some(message) = p2p_rx.recv() => {
                     match message {
                         Message::OpBuiltPayload(payload) => {
+                            if !p2p_process_full_payload_flag {
+                                continue;
+                            }
+
                             let payload: OpBuiltPayload = payload.into();
                             let block_hash = payload.block().hash();
                             // Check if this block is already the pending block in canonical state
