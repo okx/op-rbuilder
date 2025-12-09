@@ -173,6 +173,8 @@ where
                             if let Err(e) = ws_pub.publish(&fb_payload) {
                                 warn!(e = ?e, "failed to publish flashblock to websocket publisher");
                             }
+                            // ignore error here; if p2p was disabled, the channel will be closed.
+                            let _ = p2p_tx.send(Message::from_flashblock_payload(fb_payload)).await;
                         }
                     }
                 }
