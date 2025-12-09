@@ -127,7 +127,7 @@ where
                             if !p2p_process_full_payload_flag {
                                 continue;
                             }
-
+                            let _ = p2p_tx.send(Message::OpBuiltPayload(payload.clone())).await;
                             let payload: OpBuiltPayload = payload.into();
                             let block_hash = payload.block().hash();
                             // Check if this block is already the pending block in canonical state
