@@ -26,7 +26,7 @@ pub use builder_tx::{
     SimulationSuccessResult, get_balance, get_nonce,
 };
 pub use context::OpPayloadBuilderCtx;
-pub use flashblocks::{FlashblocksBuilder, FlashblocksServiceBuilder};
+pub use flashblocks::{FlashblocksBuilder, FlashblocksServiceBuilder, WebSocketPublisher};
 pub use standard::StandardBuilder;
 
 /// Defines the payload building mode for the OP builder.

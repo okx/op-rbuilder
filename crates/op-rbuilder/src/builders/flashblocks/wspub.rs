@@ -26,7 +26,7 @@ use crate::metrics::OpRBuilderMetrics;
 /// updates about new flashblocks. It maintains a count of sent messages and active subscriptions.
 ///
 /// This is modelled as a `futures::Sink` that can be used to send `FlashblocksPayloadV1` messages.
-pub(super) struct WebSocketPublisher {
+pub struct WebSocketPublisher {
     sent: Arc<AtomicUsize>,
     subs: Arc<AtomicUsize>,
     term: watch::Sender<bool>,
@@ -34,7 +34,7 @@ pub(super) struct WebSocketPublisher {
 }
 
 impl WebSocketPublisher {
-    pub(super) fn new(addr: SocketAddr, metrics: Arc<OpRBuilderMetrics>) -> io::Result<Self> {
+    pub fn new(addr: SocketAddr, metrics: Arc<OpRBuilderMetrics>) -> io::Result<Self> {
         let (pipe, _) = broadcast::channel(100);
         let (term, _) = watch::channel(false);
 
@@ -59,7 +59,7 @@ impl WebSocketPublisher {
         })
     }
 
-    pub(super) fn publish(&self, payload: &FlashblocksPayloadV1) -> io::Result<usize> {
+    pub fn publish(&self, payload: &FlashblocksPayloadV1) -> io::Result<usize> {
         // Serialize the payload to a UTF-8 string
         // serialize only once, then just copy around only a pointer
         // to the serialized data for each subscription.
