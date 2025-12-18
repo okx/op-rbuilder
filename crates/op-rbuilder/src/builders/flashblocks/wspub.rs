@@ -5,6 +5,7 @@ use core::{
 };
 use futures::SinkExt;
 use futures_util::StreamExt;
+use op_alloy_rpc_types_engine::OpFlashblockPayload;
 use rollup_boost::FlashblocksPayloadV1;
 use std::{io, net::TcpListener, sync::Arc};
 use tokio::{
@@ -21,6 +22,8 @@ use tokio_tungstenite::{
 use tracing::{debug, warn};
 
 use crate::metrics::OpRBuilderMetrics;
+
+use super::wspub_xlayer::publish_op_payload as publish_op_payload_impl;
 
 /// A WebSockets publisher that accepts connections from client websockets and broadcasts to them
 /// updates about new flashblocks. It maintains a count of sent messages and active subscriptions.
@@ -79,6 +82,10 @@ impl WebSocketPublisher {
             .send(utf8_bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::ConnectionAborted, e))?;
         Ok(size)
+    }
+
+    pub fn publish_op_payload(&self, payload: &OpFlashblockPayload) -> io::Result<usize> {
+        publish_op_payload_impl(&self.pipe, payload)
     }
 }
 
