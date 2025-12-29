@@ -16,15 +16,19 @@ use alloy_consensus::{
     BlockBody, EMPTY_OMMER_ROOT_HASH, Header, constants::EMPTY_WITHDRAWALS, proofs,
 };
 use alloy_eips::{Encodable2718, eip7685::EMPTY_REQUESTS_HASH, merge::BEACON_NONCE};
-use alloy_primitives::{Address, B256, U256, map::foldhash::HashMap};
+use alloy_primitives::{Address, B256, U256};
 use core::time::Duration;
 use eyre::WrapErr as _;
+use op_alloy_rpc_types_engine::{
+    OpFlashblockPayload, OpFlashblockPayloadBase, OpFlashblockPayloadDelta,
+    OpFlashblockPayloadMetadata,
+};
 use reth::payload::PayloadBuilderAttributes;
 use reth_basic_payload_builder::BuildOutcome;
 use reth_chain_state::ExecutedBlock;
 use reth_chainspec::EthChainSpec;
 use reth_evm::{ConfigureEvm, execute::BlockBuilder};
-use reth_node_api::{Block, NodePrimitives, PayloadBuilderError};
+use reth_node_api::{Block, PayloadBuilderError};
 use reth_optimism_consensus::{calculate_receipt_root_no_memo_optimism, isthmus};
 use reth_optimism_evm::{OpEvmConfig, OpNextBlockEnvAttributes};
 use reth_optimism_forks::OpHardforks;
@@ -46,11 +50,8 @@ use reth_revm::{
 use reth_transaction_pool::TransactionPool;
 use reth_trie::{HashedPostState, updates::TrieUpdates};
 use revm::Database;
-use rollup_boost::{
-    ExecutionPayloadBaseV1, ExecutionPayloadFlashblockDeltaV1, FlashblocksPayloadV1,
-};
-use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     ops::{Div, Rem},
     sync::Arc,
     time::Instant,
@@ -58,6 +59,24 @@ use std::{
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, metadata::Level, span, warn};
+
+/// Converts a reth OpReceipt to an op-alloy OpReceipt
+/// TODO: remove this once reth updates to use the op-alloy defined type as well.
+fn convert_receipt(receipt: &OpReceipt) -> op_alloy_consensus::OpReceipt {
+    match receipt {
+        OpReceipt::Legacy(r) => op_alloy_consensus::OpReceipt::Legacy(r.clone()),
+        OpReceipt::Eip2930(r) => op_alloy_consensus::OpReceipt::Eip2930(r.clone()),
+        OpReceipt::Eip1559(r) => op_alloy_consensus::OpReceipt::Eip1559(r.clone()),
+        OpReceipt::Eip7702(r) => op_alloy_consensus::OpReceipt::Eip7702(r.clone()),
+        OpReceipt::Deposit(r) => {
+            op_alloy_consensus::OpReceipt::Deposit(op_alloy_consensus::OpDepositReceipt {
+                inner: r.inner.clone(),
+                deposit_nonce: r.deposit_nonce,
+                deposit_receipt_version: r.deposit_receipt_version,
+            })
+        }
+    }
+}
 
 type NextBestFlashblocksTxs<Pool> = BestFlashblocksTxs<
     <Pool as TransactionPool>::Transaction,
@@ -152,7 +171,7 @@ pub(super) struct OpPayloadBuilder<Pool, Client, BuilderTx> {
     pub client: Client,
     /// Sender for sending built flashblock payloads to [`PayloadHandler`],
     /// which broadcasts outgoing flashblock payloads via p2p.
-    pub built_fb_payload_tx: mpsc::Sender<FlashblocksPayloadV1>,
+    pub built_fb_payload_tx: mpsc::Sender<OpFlashblockPayload>,
     /// Sender for sending built full block payloads to [`PayloadHandler`],
     /// which updates the engine tree state.
     pub built_payload_tx: mpsc::Sender<OpBuiltPayload>,
@@ -178,7 +197,7 @@ impl<Pool, Client, BuilderTx> OpPayloadBuilder<Pool, Client, BuilderTx> {
         client: Client,
         config: BuilderConfig<FlashblocksConfig>,
         builder_tx: BuilderTx,
-        built_fb_payload_tx: mpsc::Sender<FlashblocksPayloadV1>,
+        built_fb_payload_tx: mpsc::Sender<OpFlashblockPayload>,
         built_payload_tx: mpsc::Sender<OpBuiltPayload>,
         ws_pub: Arc<WebSocketPublisher>,
         metrics: Arc<OpRBuilderMetrics>,
@@ -1078,13 +1097,6 @@ where
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct FlashblocksMetadata {
-    receipts: HashMap<B256, <OpPrimitives as NodePrimitives>::Receipt>,
-    new_account_balances: HashMap<Address, U256>,
-    block_number: u64,
-}
-
 fn execute_pre_steps<DB, ExtraCtx>(
     state: &mut State<DB>,
     ctx: &OpPayloadBuilderCtx<ExtraCtx>,
@@ -1110,7 +1122,7 @@ pub(super) fn build_block<DB, P, ExtraCtx>(
     ctx: &OpPayloadBuilderCtx<ExtraCtx>,
     info: &mut ExecutionInfo<FlashblocksExecutionInfo>,
     calculate_state_root: bool,
-) -> Result<(OpBuiltPayload, FlashblocksPayloadV1, BundleState), PayloadBuilderError>
+) -> Result<(OpBuiltPayload, OpFlashblockPayload, BundleState), PayloadBuilderError>
 where
     DB: Database<Error = ProviderError> + AsRef<P>,
     P: StateRootProvider + HashedPostStateProvider + StorageRootProvider,
@@ -1303,16 +1315,16 @@ where
     let receipts_with_hash = new_transactions
         .iter()
         .zip(new_receipts.iter())
-        .map(|(tx, receipt)| (tx.tx_hash(), receipt.clone()))
-        .collect::<HashMap<B256, OpReceipt>>();
+        .map(|(tx, receipt)| (tx.tx_hash(), convert_receipt(receipt)))
+        .collect::<BTreeMap<B256, op_alloy_consensus::OpReceipt>>();
     let new_account_balances = state
         .bundle_state
         .state
         .iter()
         .filter_map(|(address, account)| account.info.as_ref().map(|info| (*address, info.balance)))
-        .collect::<HashMap<Address, U256>>();
+        .collect::<BTreeMap<Address, U256>>();
 
-    let metadata: FlashblocksMetadata = FlashblocksMetadata {
+    let metadata = OpFlashblockPayloadMetadata {
         receipts: receipts_with_hash,
         new_account_balances,
         block_number: ctx.parent().number + 1,
@@ -1321,10 +1333,10 @@ where
     let (_, blob_gas_used) = ctx.blob_fields(info);
 
     // Prepare the flashblocks message
-    let fb_payload = FlashblocksPayloadV1 {
+    let fb_payload = OpFlashblockPayload {
         payload_id: ctx.payload_id(),
         index: 0,
-        base: Some(ExecutionPayloadBaseV1 {
+        base: Some(OpFlashblockPayloadBase {
             parent_beacon_block_root: ctx
                 .attributes()
                 .payload_attributes
@@ -1341,9 +1353,9 @@ where
             gas_limit: ctx.block_gas_limit(),
             timestamp: ctx.attributes().payload_attributes.timestamp,
             extra_data: ctx.extra_data()?,
-            base_fee_per_gas: ctx.base_fee().try_into().unwrap(),
+            base_fee_per_gas: U256::from(ctx.base_fee()),
         }),
-        diff: ExecutionPayloadFlashblockDeltaV1 {
+        diff: OpFlashblockPayloadDelta {
             state_root,
             receipts_root,
             logs_bloom,
@@ -1354,7 +1366,7 @@ where
             withdrawals_root: withdrawals_root.unwrap_or_default(),
             blob_gas_used,
         },
-        metadata: serde_json::to_value(&metadata).unwrap_or_default(),
+        metadata,
     };
 
     // We clean bundle and place initial state transaction back
