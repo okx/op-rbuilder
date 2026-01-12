@@ -12,7 +12,6 @@ mod payload;
 mod payload_handler;
 mod service;
 mod wspub;
-mod wspub_xlayer;
 
 pub use wspub::WebSocketPublisher;
 
