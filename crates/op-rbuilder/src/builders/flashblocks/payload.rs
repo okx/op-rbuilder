@@ -335,6 +335,19 @@ where
             cancel: block_cancel,
         } = args;
 
+        // Log block build start
+        {
+            use reth_monitor::{get_global_tracer, TransactionProcessId};
+            let block_number = config.parent_header.number + 1;
+            if let Some(tracer) = get_global_tracer() {
+                tracer.log_block(
+                    config.parent_header.hash(),
+                    block_number,
+                    TransactionProcessId::SeqBlockBuildStart,
+                );
+            }
+        }
+
         // We log only every 100th block to reduce usage
         let span = if cfg!(feature = "telemetry")
             && config
@@ -571,6 +584,21 @@ where
                     &resolve_payload,
                 )
                 .await;
+                
+                // Log block build end
+                if let Some(payload) = resolve_payload.get() {
+                    use reth_monitor::{get_global_tracer, TransactionProcessId};
+                    let block_hash = payload.block().hash();
+                    let block_number = payload.block().header().number;
+                    if let Some(tracer) = get_global_tracer() {
+                        tracer.log_block(
+                            B256::from(*block_hash),
+                            block_number,
+                            TransactionProcessId::SeqBlockBuildEnd,
+                        );
+                    }
+                }
+                
                 self.record_flashblocks_metrics(
                     &ctx,
                     &info,

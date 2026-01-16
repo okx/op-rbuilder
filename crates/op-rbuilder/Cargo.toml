@@ -60,6 +60,10 @@ reth-optimism-rpc.workspace = true
 reth-tasks.workspace = true
 reth-tracing-otlp = { workspace = true, optional = true }
 
+# reth-monitor for transaction and block monitoring
+# Note: Initialization is done in xlayer-reth, op-rbuilder only uses get_global_tracer()
+reth-monitor = { git = "https://github.com/okx/reth", branch = "leo/support-full-trace" }
+
 alloy-primitives.workspace = true
 alloy-consensus.workspace = true
 alloy-contract.workspace = true

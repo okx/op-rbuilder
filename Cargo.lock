@@ -6942,6 +6942,7 @@ dependencies = [
  "reth-exex",
  "reth-ipc",
  "reth-metrics",
+ "reth-monitor",
  "reth-network-peers",
  "reth-node-api",
  "reth-node-builder",
@@ -9401,6 +9402,15 @@ dependencies = [
  "metrics-derive",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "reth-monitor"
+version = "1.9.3"
+source = "git+https://github.com/okx/reth?branch=leo%2Fsupport-full-trace#1fe239d6e83c5e2dff8fe9617bec418ceeb1559e"
+dependencies = [
+ "alloy-primitives 1.5.2",
+ "tracing",
 ]
 
 [[package]]

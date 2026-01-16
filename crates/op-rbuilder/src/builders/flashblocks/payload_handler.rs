@@ -112,6 +112,21 @@ where
                     let _ = p2p_tx.send(Message::from_flashblock_payload(payload)).await;
                 }
                 Some(payload) = built_payload_rx.recv() => {
+                    // Log block send start
+                    {
+                        use reth_monitor::{get_global_tracer, TransactionProcessId};
+                        use alloy_primitives::B256;
+                        let block_hash = payload.block().hash();
+                        let block_number = payload.block().header().number;
+                        if let Some(tracer) = get_global_tracer() {
+                            tracer.log_block(
+                                B256::from(*block_hash),
+                                block_number,
+                                TransactionProcessId::SeqBlockSendStart,
+                            );
+                        }
+                    }
+
                     // Update engine tree state with locally built block payloads
                     if let Err(e) = payload_events_handle.send(Events::BuiltPayload(payload.clone())) {
                         warn!(e = ?e, "failed to send BuiltPayload event");

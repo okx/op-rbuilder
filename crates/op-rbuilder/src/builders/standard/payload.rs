@@ -35,6 +35,8 @@ use reth_transaction_pool::{
 use std::{sync::Arc, time::Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
+use reth_monitor::{get_global_tracer, TransactionProcessId};
+use alloy_primitives::B256;
 
 /// Optimism's payload builder
 #[derive(Debug, Clone)]
@@ -199,6 +201,16 @@ where
             config,
             cancel,
         } = args;
+
+        // Log block build start
+        let block_number = config.parent_header.number + 1;
+        if let Some(tracer) = get_global_tracer() {
+            tracer.log_block(
+                config.parent_header.hash(),
+                block_number,
+                TransactionProcessId::SeqBlockBuildStart,
+            );
+        }
 
         let chain_spec = self.client.chain_spec();
         let timestamp = config.attributes.timestamp();
@@ -583,6 +595,16 @@ impl<Txs: PayloadTxsBounds> OpBuilder<'_, Txs> {
 
         let sealed_block = Arc::new(block.seal_slow());
         info!(target: "payload_builder", id=%ctx.attributes().payload_id(), "sealed built block");
+
+        // Log block build end
+        let block_hash = sealed_block.hash();
+        if let Some(tracer) = get_global_tracer() {
+            tracer.log_block(
+                B256::from(*block_hash),
+                block_number,
+                TransactionProcessId::SeqBlockBuildEnd,
+            );
+        }
 
         // create the executed block data
         let executed = ExecutedBlock {

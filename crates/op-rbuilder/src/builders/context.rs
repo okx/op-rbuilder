@@ -2,7 +2,7 @@ use alloy_consensus::{Eip658Value, Transaction, conditional::BlockConditionalAtt
 use alloy_eips::{Encodable2718, Typed2718};
 use alloy_evm::Database;
 use alloy_op_evm::block::receipt_builder::OpReceiptBuilder;
-use alloy_primitives::{BlockHash, Bytes, U256};
+use alloy_primitives::{BlockHash, Bytes, U256, B256};
 use alloy_rpc_types_eth::Withdrawals;
 use core::fmt::Debug;
 use op_alloy_consensus::OpDepositReceipt;
@@ -46,6 +46,7 @@ use crate::{
     traits::PayloadTxsBounds,
     tx_signer::Signer,
 };
+use reth_monitor::{get_global_tracer, TransactionProcessId};
 
 /// Container type that holds all necessities to build a new payload.
 #[derive(Debug)]
@@ -326,9 +327,21 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
                     ))
                 })?;
 
+            let tx_hash = sequencer_tx.hash();
+            let block_number = self.block_number();
+            
             let ResultAndState { result, state } = match evm.transact(&sequencer_tx) {
                 Ok(res) => res,
                 Err(err) => {
+                    // Log transaction execution end even for failed transactions
+                    if let Some(tracer) = get_global_tracer() {
+                        tracer.log_transaction(
+                            B256::from(*tx_hash),
+                            TransactionProcessId::SeqTxExecutionEnd,
+                            Some(block_number),
+                        );
+                    }
+                    
                     if err.is_invalid_tx_err() {
                         trace!(target: "payload_builder", %err, ?sequencer_tx, "Error in sequencer transaction, skipping.");
                         continue;
@@ -360,6 +373,15 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
 
             // commit changes
             evm.db_mut().commit(state);
+
+            // Log transaction execution end
+            if let Some(tracer) = get_global_tracer() {
+                tracer.log_transaction(
+                    B256::from(*tx_hash),
+                    TransactionProcessId::SeqTxExecutionEnd,
+                    Some(block_number),
+                );
+            }
 
             // append sender and transaction to the respective lists
             info.executed_senders.push(sequencer_tx.signer());
@@ -434,10 +456,20 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
 
             num_txs_considered += 1;
 
+            let block_number = self.block_number();
+            
             // TODO: ideally we should get this from the txpool stream
             if let Some(conditional) = conditional
                 && !conditional.matches_block_attributes(&block_attr)
             {
+                // Log transaction execution end for rejected transactions
+                if let Some(tracer) = get_global_tracer() {
+                    tracer.log_transaction(
+                        B256::from(*tx_hash),
+                        TransactionProcessId::SeqTxExecutionEnd,
+                        Some(block_number),
+                    );
+                }
                 best_txs.mark_invalid(tx.signer(), tx.nonce());
                 continue;
             }
@@ -450,6 +482,14 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
                     && !is_valid_interop(interop, self.config.attributes.timestamp())
                 {
                     log_txn(TxnExecutionResult::InteropFailed);
+                    // Log transaction execution end for rejected transactions
+                    if let Some(tracer) = get_global_tracer() {
+                        tracer.log_transaction(
+                            B256::from(*tx_hash),
+                            TransactionProcessId::SeqTxExecutionEnd,
+                            Some(block_number),
+                        );
+                    }
                     best_txs.mark_invalid(tx.signer(), tx.nonce());
                     continue;
                 }
@@ -469,6 +509,14 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
                 // invalid which also removes all dependent transaction from
                 // the iterator before we can continue
                 log_txn(result);
+                // Log transaction execution end for rejected transactions
+                if let Some(tracer) = get_global_tracer() {
+                    tracer.log_transaction(
+                        B256::from(*tx_hash),
+                        TransactionProcessId::SeqTxExecutionEnd,
+                        Some(block_number),
+                    );
+                }
                 best_txs.mark_invalid(tx.signer(), tx.nonce());
                 continue;
             }
@@ -476,6 +524,14 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
             // A sequencer's block should never contain blob or deposit transactions from the pool.
             if tx.is_eip4844() || tx.is_deposit() {
                 log_txn(TxnExecutionResult::SequencerTransaction);
+                // Log transaction execution end for rejected transactions
+                if let Some(tracer) = get_global_tracer() {
+                    tracer.log_transaction(
+                        B256::from(*tx_hash),
+                        TransactionProcessId::SeqTxExecutionEnd,
+                        Some(block_number),
+                    );
+                }
                 best_txs.mark_invalid(tx.signer(), tx.nonce());
                 continue;
             }
@@ -489,6 +545,15 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
             let ResultAndState { result, state } = match evm.transact(&tx) {
                 Ok(res) => res,
                 Err(err) => {
+                    // Log transaction execution end for failed transactions
+                    if let Some(tracer) = get_global_tracer() {
+                        tracer.log_transaction(
+                            B256::from(*tx_hash),
+                            TransactionProcessId::SeqTxExecutionEnd,
+                            Some(block_number),
+                        );
+                    }
+                    
                     if let Some(err) = err.as_invalid_tx_err() {
                         if err.is_nonce_too_low() {
                             // if the nonce is too low, we can skip this transaction
@@ -526,6 +591,14 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
                 .is_err()
             {
                 log_txn(TxnExecutionResult::MaxGasUsageExceeded);
+                // Log transaction execution end for rejected transactions
+                if let Some(tracer) = get_global_tracer() {
+                    tracer.log_transaction(
+                        B256::from(*tx_hash),
+                        TransactionProcessId::SeqTxExecutionEnd,
+                        Some(block_number),
+                    );
+                }
                 best_txs.mark_invalid(tx.signer(), tx.nonce());
                 continue;
             }
@@ -547,6 +620,14 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
                 && gas_used > max_gas_per_txn
             {
                 log_txn(TxnExecutionResult::MaxGasUsageExceeded);
+                // Log transaction execution end for rejected transactions
+                if let Some(tracer) = get_global_tracer() {
+                    tracer.log_transaction(
+                        B256::from(*tx_hash),
+                        TransactionProcessId::SeqTxExecutionEnd,
+                        Some(block_number),
+                    );
+                }
                 best_txs.mark_invalid(tx.signer(), tx.nonce());
                 continue;
             }
@@ -567,6 +648,16 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
 
             // commit changes
             evm.db_mut().commit(state);
+
+            // Log transaction execution end (SeqTxExecutionEnd - ID: 15034)
+            let block_number = self.block_number();
+            if let Some(tracer) = get_global_tracer() {
+                tracer.log_transaction(
+                    B256::from(*tx_hash),
+                    TransactionProcessId::SeqTxExecutionEnd,
+                    Some(block_number),
+                );
+            }
 
             // update add to total fees
             let miner_fee = tx
