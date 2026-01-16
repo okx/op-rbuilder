@@ -136,13 +136,13 @@ async fn listener_loop(
                     Ok(stream) => {
                         tokio::spawn(async move {
                             subs.fetch_add(1, Ordering::Relaxed);
-                            tracing::debug!("WebSocket connection established with {}", peer_addr);
+                            tracing::info!("XXX WebSocket connection established with {}", peer_addr);
 
                             // Handle the WebSocket connection in a dedicated task
                             broadcast_loop(stream, metrics, term, receiver_clone, sent).await;
 
                             subs.fetch_sub(1, Ordering::Relaxed);
-                            tracing::debug!("WebSocket connection closed for {}", peer_addr);
+                            tracing::info!("XXX WebSocket connection closed for {}", peer_addr);
                         });
                     }
                     Err(e) => {
@@ -193,18 +193,18 @@ async fn broadcast_loop(
                     sent.fetch_add(1, Ordering::Relaxed);
                     metrics.messages_sent_count.increment(1);
 
-                    tracing::debug!("Broadcasted payload: {:?}", payload);
+                    tracing::info!("XXX Broadcasted payload: {:?}", payload);
                     if let Err(e) = stream.send(Message::Text(payload)).await {
-                        tracing::debug!("Closing flashblocks subscription for {peer_addr}: {e}");
+                        tracing::info!("XXX Closing flashblocks subscription for {peer_addr}: {e}");
                         break; // Exit the loop if sending fails
                     }
                 }
                 Err(RecvError::Closed) => {
-                    tracing::debug!("Broadcast channel closed, exiting broadcast loop");
+                    tracing::info!("XXX Broadcast channel closed, exiting broadcast loop");
                     return;
                 }
                 Err(RecvError::Lagged(_)) => {
-                    tracing::warn!("Broadcast channel lagged, some messages were dropped");
+                    tracing::warn!("XXX Broadcast channel lagged, some messages were dropped");
                 }
             },
 
@@ -212,14 +212,16 @@ async fn broadcast_loop(
             message = stream.next() => if let Some(message) = message { match message {
                 // We handle only close frame to highlight conn closing
                 Ok(Message::Close(_)) => {
-                    tracing::info!("Closing frame received, stopping connection for {peer_addr}");
+                    tracing::info!("XXX Closing frame received, stopping connection for {peer_addr}");
                     break;
                 }
                 Err(e) => {
-                    tracing::warn!("Received error. Closing flashblocks subscription for {peer_addr}: {e}");
+                    tracing::warn!("XXX Received error. Closing flashblocks subscription for {peer_addr}: {e}");
                     break;
                 }
-                _ => (),
+                _ => {
+                    tracing::info!("XXX Received unexpected message: {:?}", message);
+                },
             } }
         }
     }
