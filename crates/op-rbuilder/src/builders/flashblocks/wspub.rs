@@ -5,7 +5,6 @@ use core::{
 };
 use futures::SinkExt;
 use futures_util::StreamExt;
-use op_alloy_rpc_types_engine::OpFlashblockPayload;
 use rollup_boost::FlashblocksPayloadV1;
 use std::{io, net::TcpListener, sync::Arc};
 use tokio::{
@@ -23,13 +22,11 @@ use tracing::{debug, warn};
 
 use crate::metrics::OpRBuilderMetrics;
 
-use super::wspub_xlayer::publish_op_payload as publish_op_payload_impl;
-
 /// A WebSockets publisher that accepts connections from client websockets and broadcasts to them
 /// updates about new flashblocks. It maintains a count of sent messages and active subscriptions.
 ///
 /// This is modelled as a `futures::Sink` that can be used to send `FlashblocksPayloadV1` messages.
-pub struct WebSocketPublisher {
+pub(super) struct WebSocketPublisher {
     sent: Arc<AtomicUsize>,
     subs: Arc<AtomicUsize>,
     term: watch::Sender<bool>,
@@ -37,7 +34,7 @@ pub struct WebSocketPublisher {
 }
 
 impl WebSocketPublisher {
-    pub fn new(addr: SocketAddr, metrics: Arc<OpRBuilderMetrics>) -> io::Result<Self> {
+    pub(super) fn new(addr: SocketAddr, metrics: Arc<OpRBuilderMetrics>) -> io::Result<Self> {
         let (pipe, _) = broadcast::channel(100);
         let (term, _) = watch::channel(false);
 
@@ -62,7 +59,7 @@ impl WebSocketPublisher {
         })
     }
 
-    pub fn publish(&self, payload: &FlashblocksPayloadV1) -> io::Result<usize> {
+    pub(super) fn publish(&self, payload: &FlashblocksPayloadV1) -> io::Result<usize> {
         // Serialize the payload to a UTF-8 string
         // serialize only once, then just copy around only a pointer
         // to the serialized data for each subscription.
@@ -82,10 +79,6 @@ impl WebSocketPublisher {
             .send(utf8_bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::ConnectionAborted, e))?;
         Ok(size)
-    }
-
-    pub fn publish_op_payload(&self, payload: &OpFlashblockPayload) -> io::Result<usize> {
-        publish_op_payload_impl(&self.pipe, payload)
     }
 }
 
@@ -143,13 +136,13 @@ async fn listener_loop(
                     Ok(stream) => {
                         tokio::spawn(async move {
                             subs.fetch_add(1, Ordering::Relaxed);
-                            tracing::debug!("WebSocket connection established with {}", peer_addr);
+                            tracing::info!("XXX WebSocket connection established with {}", peer_addr);
 
                             // Handle the WebSocket connection in a dedicated task
                             broadcast_loop(stream, metrics, term, receiver_clone, sent).await;
 
                             subs.fetch_sub(1, Ordering::Relaxed);
-                            tracing::debug!("WebSocket connection closed for {}", peer_addr);
+                            tracing::info!("XXX WebSocket connection closed for {}", peer_addr);
                         });
                     }
                     Err(e) => {
@@ -200,18 +193,18 @@ async fn broadcast_loop(
                     sent.fetch_add(1, Ordering::Relaxed);
                     metrics.messages_sent_count.increment(1);
 
-                    tracing::debug!("Broadcasted payload: {:?}", payload);
+                    tracing::info!("XXX Broadcasted payload: {:?}", payload);
                     if let Err(e) = stream.send(Message::Text(payload)).await {
-                        tracing::debug!("Closing flashblocks subscription for {peer_addr}: {e}");
+                        tracing::info!("XXX Closing flashblocks subscription for {peer_addr}: {e}");
                         break; // Exit the loop if sending fails
                     }
                 }
                 Err(RecvError::Closed) => {
-                    tracing::debug!("Broadcast channel closed, exiting broadcast loop");
+                    tracing::info!("XXX Broadcast channel closed, exiting broadcast loop");
                     return;
                 }
                 Err(RecvError::Lagged(_)) => {
-                    tracing::warn!("Broadcast channel lagged, some messages were dropped");
+                    tracing::warn!("XXX Broadcast channel lagged, some messages were dropped");
                 }
             },
 
@@ -219,14 +212,16 @@ async fn broadcast_loop(
             message = stream.next() => if let Some(message) = message { match message {
                 // We handle only close frame to highlight conn closing
                 Ok(Message::Close(_)) => {
-                    tracing::info!("Closing frame received, stopping connection for {peer_addr}");
+                    tracing::info!("XXX Closing frame received, stopping connection for {peer_addr}");
                     break;
                 }
                 Err(e) => {
-                    tracing::warn!("Received error. Closing flashblocks subscription for {peer_addr}: {e}");
+                    tracing::warn!("XXX Received error. Closing flashblocks subscription for {peer_addr}: {e}");
                     break;
                 }
-                _ => (),
+                _ => {
+                    tracing::info!("XXX Received unexpected message: {:?}", message);
+                },
             } }
         }
     }
