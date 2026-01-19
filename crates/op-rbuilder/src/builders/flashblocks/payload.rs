@@ -956,7 +956,7 @@ where
                         }));
 
                         if let Some(rx) = sync_rx {
-                            rx.recv().unwrap_or_else(|_| {
+                            rx.blocking_recv().unwrap_or_else(|_| {
                                 warn!(
                                     target: "payload_builder",
                                     "Failed to calculate state root, state root task stopped. Falling back to fallback payload"
@@ -1569,15 +1569,15 @@ fn resolve_zero_state_root(
     let updated_block = alloy_consensus::Block::<OpTransactionSigned>::new(header, body);
     let recovered_block = RecoveredBlock::new_unhashed(
         updated_block.clone(),
-        executed_block.recovered_block().senders().to_vec(),
+        executed_block.recovered_block.senders().to_vec(),
     );
     let sealed_block = Arc::new(updated_block.seal_slow());
 
-    let executed = ExecutedBlock {
+    let executed = BuiltPayloadExecutedBlock {
         recovered_block: Arc::new(recovered_block),
         execution_output: executed_block.execution_output.clone(),
-        hashed_state: Arc::new(hashed_state),
-        trie_updates: Arc::new(trie_updates),
+        trie_updates: either::Either::Left(Arc::new(trie_updates)),
+        hashed_state: either::Either::Left(Arc::new(hashed_state)),
     };
     let updated_payload = OpBuiltPayload::new(payload_id, sealed_block, fees, Some(executed));
 
