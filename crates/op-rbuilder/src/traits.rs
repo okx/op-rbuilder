@@ -65,6 +65,7 @@ pub trait ClientBounds:
     + ChainSpecProvider<ChainSpec = OpChainSpec>
     + BlockReaderIdExt<Header = Header>
     + Clone
+    + Send
 {
 }
 
@@ -73,6 +74,7 @@ impl<T> ClientBounds for T where
         + ChainSpecProvider<ChainSpec = OpChainSpec>
         + BlockReaderIdExt<Header = Header>
         + Clone
+        + Send
 {
 }
 
