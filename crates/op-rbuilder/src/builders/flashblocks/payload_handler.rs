@@ -321,7 +321,7 @@ where
         cancel,
     );
 
-    let (built_payload, fb_payload, _) = crate::builders::flashblocks::payload::build_block(
+    let (built_payload, fb_payload, _, _) = crate::builders::flashblocks::payload::build_block(
         &mut state,
         &builder_ctx,
         &mut info,

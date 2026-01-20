@@ -412,7 +412,7 @@ where
         };
 
         // We should always calculate state root for fallback payload
-        let (fallback_payload, fb_payload, bundle_state) =
+        let (fallback_payload, fb_payload, bundle_state, new_tx_hashes) =
             build_block(&mut state, &ctx, &mut info, true)?;
         self.built_fb_payload_tx
             .try_send(fb_payload.clone())
@@ -434,6 +434,12 @@ where
             ctx.metrics
                 .flashblock_byte_size_histogram
                 .record(flashblock_byte_size as f64);
+
+            // For X Layer, full link monitoring support
+            crate::builders::flashblocks::monitor_xlayer::monitor(
+                best_payload.0.block().header().number,
+                new_tx_hashes,
+            );
         }
 
         if ctx.attributes().no_tx_pool {
@@ -825,7 +831,7 @@ where
                 ctx.metrics.invalid_built_blocks_count.increment(1);
                 Err(err).wrap_err("failed to build payload")
             }
-            Ok((new_payload, mut fb_payload, bundle_state)) => {
+            Ok((new_payload, mut fb_payload, bundle_state, new_tx_hashes)) => {
                 fb_payload.index = flashblock_index;
                 fb_payload.base = None;
 
@@ -839,7 +845,7 @@ where
                     .publish(&fb_payload)
                     .wrap_err("failed to publish flashblock via websocket")?;
                 self.built_fb_payload_tx
-                    .try_send(fb_payload.clone())
+                    .try_send(fb_payload)
                     .wrap_err("failed to send built payload to handler")?;
                 *best_payload = (new_payload, bundle_state);
 
@@ -853,6 +859,12 @@ where
                 ctx.metrics
                     .flashblock_num_tx_histogram
                     .record(info.executed_transactions.len() as f64);
+
+                // For X Layer, full link monitoring support
+                crate::builders::flashblocks::monitor_xlayer::monitor(
+                    best_payload.0.block().header().number,
+                    new_tx_hashes,
+                );
 
                 // Update bundle_state for next iteration
                 if let Some(da_limit) = ctx.extra_ctx.da_per_batch {
@@ -1256,7 +1268,7 @@ pub(super) fn build_block<DB, P, ExtraCtx>(
     ctx: &OpPayloadBuilderCtx<ExtraCtx>,
     info: &mut ExecutionInfo<FlashblocksExecutionInfo>,
     calculate_state_root: bool,
-) -> Result<(OpBuiltPayload, OpFlashblockPayload, BundleState), PayloadBuilderError>
+) -> Result<(OpBuiltPayload, OpFlashblockPayload, BundleState, Vec<B256>), PayloadBuilderError>
 where
     DB: Database<Error = ProviderError> + AsRef<P>,
     P: StateRootProvider + HashedPostStateProvider + StorageRootProvider,
@@ -1444,6 +1456,12 @@ where
         .map(|tx| tx.encoded_2718().into())
         .collect::<Vec<_>>();
 
+    // For X Layer, monitoring logs
+    let new_tx_hashes = new_transactions
+        .iter()
+        .map(|tx| tx.tx_hash())
+        .collect::<Vec<_>>();
+
     let new_receipts = info.receipts[info.extra.last_flashblock_index..].to_vec();
     info.extra.last_flashblock_index = info.executed_transactions.len();
     let receipts_with_hash = new_transactions
@@ -1516,6 +1534,7 @@ where
         ),
         fb_payload,
         bundle_state,
+        new_tx_hashes,
     ))
 }
 
