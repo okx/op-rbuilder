@@ -3196,7 +3196,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.114",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -7027,6 +7027,7 @@ dependencies = [
  "uuid",
  "vergen",
  "vergen-git2",
+ "xlayer-trace-monitor",
 ]
 
 [[package]]
@@ -14792,6 +14793,15 @@ checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
 dependencies = [
  "libc",
  "rustix 1.1.3",
+]
+
+[[package]]
+name = "xlayer-trace-monitor"
+version = "0.1.0"
+source = "git+https://github.com/okx/xlayer-toolkit?rev=0004d202181bb772821797cd54983e29f32cae07#0004d202181bb772821797cd54983e29f32cae07"
+dependencies = [
+ "hex",
+ "tracing",
 ]
 
 [[package]]

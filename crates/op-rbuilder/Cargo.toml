@@ -143,6 +143,9 @@ http-body-util = { version = "0.1.3", optional = true }
 testcontainers = "0.24.0"
 dirs-next = "2.0.0"
 
+# For X layer
+xlayer-trace-monitor.workspace = true
+
 [target.'cfg(unix)'.dependencies]
 tikv-jemallocator = { version = "0.6", optional = true }
 
