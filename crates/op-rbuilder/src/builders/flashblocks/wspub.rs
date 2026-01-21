@@ -1,3 +1,4 @@
+use crate::metrics::OpRBuilderMetrics;
 use core::{
     fmt::{Debug, Formatter},
     net::SocketAddr,
@@ -14,6 +15,7 @@ use tokio::{
         watch,
     },
 };
+use tokio_tungstenite::tungstenite::protocol::{self, frame::coding::CloseCode};
 use tokio_tungstenite::{
     WebSocketStream, accept_async,
     tungstenite::{Message, Utf8Bytes},
@@ -141,19 +143,20 @@ async fn listener_loop(
                 let term = term.clone();
                 let receiver_clone = receiver.resubscribe();
 
-                let current = subs.fetch_add(1, Ordering::Relaxed);
-                if let Some(limit) = subscriber_limit && current >= limit as usize {
-                        warn!("WebSocket connection rejected: subscriber limit reached");
-                        subs.fetch_sub(1, Ordering::Relaxed);
-                        continue;
-
-                }
-
                 match accept_async(connection).await {
-                    Ok(stream) => {
+                    Ok(mut stream) => {
                         tokio::spawn(async move {
-                            subs.fetch_add(1, Ordering::Relaxed);
-                            debug!(target: "payload_builder", "WebSocket connection established with {}", peer_addr);
+                            let current = subs.fetch_add(1, Ordering::Relaxed);
+                            if let Some(limit) = subscriber_limit && current >= limit as usize {
+                                    warn!("WebSocket connection rejected: subscriber limit reached");
+                                    let _ = stream.close(Some(protocol::CloseFrame {
+                                        code: CloseCode::Again,
+                                        reason: "subscriber limit reached".into(),
+                                    })).await;
+                                    subs.fetch_sub(1, Ordering::Relaxed);
+                                    return;
+                            }
+                            tracing::debug!("WebSocket connection established with {}", peer_addr);
 
                             // Handle the WebSocket connection in a dedicated task
                             broadcast_loop(stream, metrics, term, receiver_clone, sent).await;
@@ -163,7 +166,6 @@ async fn listener_loop(
                         });
                     }
                     Err(e) => {
-                        subs.fetch_sub(1, Ordering::Relaxed);
                         warn!(target: "payload_builder", "Failed to accept WebSocket connection from {peer_addr}: {e}");
                     }
                 }
