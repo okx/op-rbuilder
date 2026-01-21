@@ -15,10 +15,12 @@ use tokio::{
         watch,
     },
 };
-use tokio_tungstenite::tungstenite::protocol::{self, frame::coding::CloseCode};
 use tokio_tungstenite::{
     WebSocketStream, accept_async,
-    tungstenite::{Message, Utf8Bytes},
+    tungstenite::{
+        Message, Utf8Bytes,
+        protocol::{self, frame::coding::CloseCode},
+    },
 };
 use tracing::{debug, info, trace, warn};
 
@@ -148,10 +150,10 @@ async fn listener_loop(
                         tokio::spawn(async move {
                             let current = subs.fetch_add(1, Ordering::Relaxed);
                             if let Some(limit) = subscriber_limit && current >= limit as usize {
-                                    warn!("WebSocket connection rejected: subscriber limit reached");
+                                    trace!("WebSocket connection rejected: subscriber limit reached");
                                     let _ = stream.close(Some(protocol::CloseFrame {
                                         code: CloseCode::Again,
-                                        reason: "subscriber limit reached".into(),
+                                        reason: "subscriber limit reached, please try again later".into(),
                                     })).await;
                                     subs.fetch_sub(1, Ordering::Relaxed);
                                     return;
