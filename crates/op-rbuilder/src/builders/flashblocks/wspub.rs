@@ -31,6 +31,7 @@ pub struct WebSocketPublisher {
     subs: Arc<AtomicUsize>,
     term: watch::Sender<bool>,
     pipe: broadcast::Sender<Utf8Bytes>,
+    subscriber_limit: Option<u16>,
 }
 
 impl WebSocketPublisher {
@@ -38,6 +39,7 @@ impl WebSocketPublisher {
         addr: SocketAddr,
         metrics: Arc<OpRBuilderMetrics>,
         task_monitor: &MonitoredTask,
+        subscriber_limit: Option<u16>,
     ) -> io::Result<Self> {
         let (pipe, _) = broadcast::channel(100);
         let (term, _) = watch::channel(false);
@@ -53,6 +55,7 @@ impl WebSocketPublisher {
             term.subscribe(),
             Arc::clone(&sent),
             Arc::clone(&subs),
+            subscriber_limit,
         )));
 
         Ok(Self {
@@ -60,6 +63,7 @@ impl WebSocketPublisher {
             subs,
             term,
             pipe,
+            subscriber_limit,
         })
     }
 
@@ -101,6 +105,7 @@ async fn listener_loop(
     term: watch::Receiver<bool>,
     sent: Arc<AtomicUsize>,
     subs: Arc<AtomicUsize>,
+    subscriber_limit: Option<u16>,
 ) {
     listener
         .set_nonblocking(true)
@@ -136,6 +141,14 @@ async fn listener_loop(
                 let term = term.clone();
                 let receiver_clone = receiver.resubscribe();
 
+                let current = subs.fetch_add(1, Ordering::Relaxed);
+                if let Some(limit) = subscriber_limit && current >= limit as usize {
+                        warn!("WebSocket connection rejected: subscriber limit reached");
+                        subs.fetch_sub(1, Ordering::Relaxed);
+                        continue;
+
+                }
+
                 match accept_async(connection).await {
                     Ok(stream) => {
                         tokio::spawn(async move {
@@ -150,6 +163,7 @@ async fn listener_loop(
                         });
                     }
                     Err(e) => {
+                        subs.fetch_sub(1, Ordering::Relaxed);
                         warn!(target: "payload_builder", "Failed to accept WebSocket connection from {peer_addr}: {e}");
                     }
                 }
@@ -233,10 +247,12 @@ impl Debug for WebSocketPublisher {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let subs = self.subs.load(Ordering::Relaxed);
         let sent = self.sent.load(Ordering::Relaxed);
+        let subscriber_limit = self.subscriber_limit;
 
         f.debug_struct("WebSocketPublisher")
             .field("subs", &subs)
             .field("payloads_sent", &sent)
+            .field("subscriber_limit", &subscriber_limit)
             .finish()
     }
 }
