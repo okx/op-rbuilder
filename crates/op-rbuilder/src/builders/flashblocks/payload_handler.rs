@@ -159,13 +159,13 @@ where
                                 );
                                 match res {
                                     Ok((payload, _)) => {
-                                        tracing::info!(target: "payload_builder", hash = payload.block().hash().to_string(), block_number = payload.block().header().number, "successfully executed received flashblock");
+                                        tracing::info!(target: "payload_builder", hash = payload.block().hash().to_string(), block_number = payload.block().header().number, "successfully executed external received flashblock");
                                         if let Err(e) = payload_events_handle.send(Events::BuiltPayload(payload)) {
                                             warn!(target: "payload_builder", e = ?e, "failed to send BuiltPayload event on synced block");
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::trace!(target: "payload_builder", error = ?e, "failed to execute received flashblock");
+                                        tracing::error!(target: "payload_builder", error = ?e, "failed to execute external received flashblock");
                                     }
                                 }
                             });
@@ -198,7 +198,7 @@ where
 
     let start = tokio::time::Instant::now();
 
-    tracing::trace!(target: "payload_builder", header = ?payload.block().header(), "executing flashblock");
+    tracing::info!(target: "payload_builder", header = ?payload.block().header(), "executing external flashblock");
 
     let mut cached_reads = reth::revm::cached::CachedReads::default();
     let parent_hash = payload.block().sealed_header().parent_hash;
@@ -347,7 +347,7 @@ where
 
     builder_ctx.metrics.block_synced_success.increment(1);
 
-    tracing::trace!(target: "payload_builder", header = ?built_payload.block().header(), "successfully executed flashblock");
+    tracing::info!(target: "payload_builder", header = ?built_payload.block().header(), "successfully executed external flashblock");
     Ok((built_payload, fb_payload))
 }
 
