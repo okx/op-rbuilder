@@ -19,7 +19,7 @@ use tokio_tungstenite::{
     WebSocketStream, accept_async,
     tungstenite::{
         Message, Utf8Bytes,
-        protocol::{self, frame::coding::CloseCode},
+        protocol::frame::{CloseFrame, coding::CloseCode},
     },
 };
 use tracing::{debug, info, trace, warn};
@@ -151,7 +151,7 @@ async fn listener_loop(
                             let current = subs.fetch_add(1, Ordering::Relaxed);
                             if let Some(limit) = subscriber_limit && current >= limit as usize {
                                     trace!("WebSocket connection rejected: subscriber limit reached");
-                                    let _ = stream.close(Some(protocol::CloseFrame {
+                                    let _ = stream.close(Some(CloseFrame {
                                         code: CloseCode::Again,
                                         reason: "subscriber limit reached, please try again later".into(),
                                     })).await;
