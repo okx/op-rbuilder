@@ -103,7 +103,7 @@ where
             p2p_process_full_payload_flag,
         } = self;
 
-        tracing::info!("flashblocks payload handler started");
+        tracing::info!(target: "payload_builder", "flashblocks payload handler started");
 
         loop {
             tokio::select! {
@@ -114,7 +114,7 @@ where
                 Some(payload) = built_payload_rx.recv() => {
                     // Update engine tree state with locally built block payloads
                     if let Err(e) = payload_events_handle.send(Events::BuiltPayload(payload.clone())) {
-                        warn!(e = ?e, "failed to send BuiltPayload event");
+                        warn!(target: "payload_builder", e = ?e, "failed to send BuiltPayload event");
                     }
                     if p2p_send_full_payload_flag {
                         // ignore error here; if p2p was disabled, the channel will be closed.
@@ -134,7 +134,8 @@ where
                             if let Ok(Some(pending)) = client.pending_block()
                                 && pending.hash() == block_hash
                             {
-                                tracing::debug!(
+                                tracing::trace!(
+                                    target: "payload_builder",
                                     hash = %block_hash,
                                     block_number = payload.block().header().number,
                                     "skipping flashblock execution - block already pending in canonical state"
@@ -158,20 +159,20 @@ where
                                 );
                                 match res {
                                     Ok((payload, _)) => {
-                                        tracing::info!(hash = payload.block().hash().to_string(), block_number = payload.block().header().number, "successfully executed received flashblock");
+                                        tracing::info!(target: "payload_builder", hash = payload.block().hash().to_string(), block_number = payload.block().header().number, "successfully executed received flashblock");
                                         if let Err(e) = payload_events_handle.send(Events::BuiltPayload(payload)) {
-                                            warn!(e = ?e, "failed to send BuiltPayload event on synced block");
+                                            warn!(target: "payload_builder", e = ?e, "failed to send BuiltPayload event on synced block");
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::debug!(error = ?e, "failed to execute received flashblock");
+                                        tracing::trace!(target: "payload_builder", error = ?e, "failed to execute received flashblock");
                                     }
                                 }
                             });
                         }
                         Message::OpFlashblockPayload(fb_payload) => {
                             if let Err(e) = ws_pub.publish(&fb_payload) {
-                                warn!(e = ?e, "failed to publish flashblock to websocket publisher");
+                                warn!(target: "payload_builder", e = ?e, "failed to publish flashblock to websocket publisher");
                             }
                         }
                     }
@@ -197,7 +198,7 @@ where
 
     let start = tokio::time::Instant::now();
 
-    tracing::debug!(header = ?payload.block().header(), "executing flashblock");
+    tracing::trace!(target: "payload_builder", header = ?payload.block().header(), "executing flashblock");
 
     let mut cached_reads = reth::revm::cached::CachedReads::default();
     let parent_hash = payload.block().sealed_header().parent_hash;
@@ -256,7 +257,7 @@ where
         .is_jovian_active_at_timestamp(timestamp)
     {
         if extra_data.len() != 17 {
-            tracing::debug!(len = extra_data.len(), data = ?extra_data, "invalid extra data length in flashblock for jovian fork");
+            tracing::trace!(target: "payload_builder", len = extra_data.len(), data = ?extra_data, "invalid extra data length in flashblock for jovian fork");
             bail!("extra data length should be 17 bytes");
         }
         let eip_1559_params = extra_data[1..9].try_into().ok();
@@ -267,13 +268,13 @@ where
         (eip_1559_params, Some(min_base_fee))
     } else if chain_spec.is_holocene_active_at_timestamp(timestamp) {
         if extra_data.len() != 9 {
-            tracing::debug!(len = extra_data.len(), data = ?extra_data, "invalid extra data length in flashblock for holocene fork");
+            tracing::trace!(target: "payload_builder", len = extra_data.len(), data = ?extra_data, "invalid extra data length in flashblock for holocene fork");
             bail!("extra data length should be 9 bytes");
         }
         (extra_data[1..9].try_into().ok(), None)
     } else {
         if !extra_data.is_empty() {
-            tracing::debug!(len = extra_data.len(), data = ?extra_data, "invalid extra data length in flashblock for pre holocene fork");
+            tracing::trace!(target: "payload_builder", len = extra_data.len(), data = ?extra_data, "invalid extra data length in flashblock for pre holocene fork");
             bail!("extra data length should be 0 bytes");
         }
         (None, None)
@@ -346,7 +347,7 @@ where
 
     builder_ctx.metrics.block_synced_success.increment(1);
 
-    tracing::debug!(header = ?built_payload.block().header(), "successfully executed flashblock");
+    tracing::trace!(target: "payload_builder", header = ?built_payload.block().header(), "successfully executed flashblock");
     Ok((built_payload, fb_payload))
 }
 
