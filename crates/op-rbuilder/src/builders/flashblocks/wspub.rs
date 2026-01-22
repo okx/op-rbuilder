@@ -147,8 +147,7 @@ async fn listener_loop(
                 match accept_async(connection).await {
                     Ok(mut stream) => {
                         tokio::spawn(async move {
-                            let current = subs.load(Ordering::Relaxed);
-                            if current >= subscriber_limit as usize {
+                            if subs.load(Ordering::Relaxed) >= subscriber_limit as usize {
                                     warn!(target: "payload_builder", "WebSocket connection for {peer_addr} rejected: subscriber limit reached");
                                     let _ = stream.close(Some(CloseFrame {
                                         code: CloseCode::Again,
