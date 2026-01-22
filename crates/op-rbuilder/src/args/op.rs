@@ -227,7 +227,7 @@ pub struct FlashblocksArgs {
     #[command(flatten)]
     pub p2p: FlashblocksP2pArgs,
 
-    /// Optional value to limit the number of concurrent WebSocket subscribers
+    /// Maximum number of concurrent WebSocket subscribers
     #[arg(
         long = "flashblocks.ws-subscriber-limit",
         env = "FLASHBLOCK_WS_SUBSCRIBER_LIMIT",

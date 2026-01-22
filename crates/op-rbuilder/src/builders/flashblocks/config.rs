@@ -80,7 +80,7 @@ pub struct FlashblocksConfig {
     /// Optional flag to process the full payload received by peers
     pub p2p_process_full_payload: bool,
 
-    /// Optional maximum number of concurrent WebSocket subscribers
+    /// Maximum number of concurrent WebSocket subscribers
     pub ws_subscriber_limit: u16,
 }
 
