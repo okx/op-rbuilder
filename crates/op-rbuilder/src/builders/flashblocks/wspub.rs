@@ -1,4 +1,3 @@
-use crate::metrics::OpRBuilderMetrics;
 use core::{
     fmt::{Debug, Formatter},
     net::SocketAddr,
@@ -148,17 +147,17 @@ async fn listener_loop(
                 match accept_async(connection).await {
                     Ok(mut stream) => {
                         tokio::spawn(async move {
-                            let current = subs.fetch_add(1, Ordering::Relaxed);
+                            let current = subs.load(Ordering::Relaxed);
                             if let Some(limit) = subscriber_limit && current >= limit as usize {
-                                    trace!("WebSocket connection rejected: subscriber limit reached");
+                                    warn!(target: "payload_builder", "WebSocket connection for {peer_addr} rejected: subscriber limit reached");
                                     let _ = stream.close(Some(CloseFrame {
                                         code: CloseCode::Again,
                                         reason: "subscriber limit reached, please try again later".into(),
                                     })).await;
-                                    subs.fetch_sub(1, Ordering::Relaxed);
                                     return;
                             }
-                            tracing::debug!("WebSocket connection established with {}", peer_addr);
+                            subs.fetch_add(1, Ordering::Relaxed);
+                            debug!(target: "payload_builder", "WebSocket connection established with {}", peer_addr);
 
                             // Handle the WebSocket connection in a dedicated task
                             broadcast_loop(stream, metrics, term, receiver_clone, sent).await;
