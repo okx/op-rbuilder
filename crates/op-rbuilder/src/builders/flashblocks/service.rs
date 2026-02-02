@@ -166,6 +166,7 @@ impl FlashblocksServiceBuilder {
             ws_pub.clone(),
             syncer_ctx,
             ctx.provider().clone(),
+            ctx.task_executor().clone(),
             cancel,
             self.0.specific.p2p_send_full_payload,
             self.0.specific.p2p_process_full_payload,
