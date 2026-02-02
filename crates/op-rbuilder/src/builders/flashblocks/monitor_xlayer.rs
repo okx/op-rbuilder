@@ -1,5 +1,5 @@
 use alloy_primitives::B256;
-use xlayer_trace_monitor::{from_b256, get_global_tracer, TransactionProcessId};
+use xlayer_trace_monitor::{TransactionProcessId, from_b256, get_global_tracer};
 
 pub(crate) fn monitor(block_number: u64, tx_hashes: Vec<B256>) {
     // For X Layer. Log transaction execution end even for failed transactions
