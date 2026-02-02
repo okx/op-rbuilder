@@ -11,7 +11,10 @@ use alloy_primitives::B64;
 use eyre::{WrapErr as _, bail};
 use op_alloy_rpc_types_engine::OpFlashblockPayload;
 use op_revm::L1BlockInfo;
-use reth::revm::{State, database::StateProviderDatabase};
+use reth::{
+    revm::{State, database::StateProviderDatabase},
+    tasks::TaskSpawner,
+};
 use reth_basic_payload_builder::PayloadConfig;
 use reth_node_builder::Events;
 use reth_optimism_chainspec::OpChainSpec;
@@ -48,15 +51,18 @@ pub(crate) struct PayloadHandler<Client> {
     ctx: OpPayloadSyncerCtx,
     // chain client
     client: Client,
+    // task executor
+    task_executor: Tasks,
     cancel: tokio_util::sync::CancellationToken,
     // For X Layer
     p2p_send_full_payload_flag: bool,
     p2p_process_full_payload_flag: bool,
 }
 
-impl<Client> PayloadHandler<Client>
+impl<Client, Tasks> PayloadHandler<Client, Tasks>
 where
     Client: ClientBounds + 'static,
+    Tasks: TaskSpawner + Clone + Unpin + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -68,6 +74,7 @@ where
         ws_pub: Arc<WebSocketPublisher>,
         ctx: OpPayloadSyncerCtx,
         client: Client,
+        task_executor: Tasks,
         cancel: tokio_util::sync::CancellationToken,
         // For X Layer
         p2p_send_full_payload_flag: bool,
@@ -82,6 +89,7 @@ where
             ws_pub,
             ctx,
             client,
+            task_executor,
             cancel,
             p2p_send_full_payload_flag,
             p2p_process_full_payload_flag,
@@ -98,6 +106,7 @@ where
             ws_pub,
             ctx,
             client,
+            task_executor,
             cancel,
             p2p_send_full_payload_flag,
             p2p_process_full_payload_flag,
@@ -150,7 +159,7 @@ where
 
                             // execute the built full payload on a thread where blocking is acceptable,
                             // as it's potentially a heavy operation
-                            tokio::task::spawn_blocking(move || {
+                            task_executor.spawn(Box::pin(async move {
                                 let res = execute_flashblock(
                                     payload,
                                     ctx,
@@ -168,7 +177,7 @@ where
                                         tracing::error!(target: "payload_builder", error = ?e, "failed to execute external received flashblock");
                                     }
                                 }
-                            });
+                            }));
                         }
                         Message::OpFlashblockPayload(fb_payload) => {
                             if let Err(e) = ws_pub.publish(&fb_payload) {
