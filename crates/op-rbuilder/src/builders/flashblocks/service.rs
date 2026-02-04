@@ -6,7 +6,6 @@ use crate::{
         flashblocks::{
             builder_tx::{FlashblocksBuilderTx, FlashblocksNumberBuilderTx},
             cache::FlashblockPayloadsCache,
-            config::FlashBlocksConfigExt,
             p2p::{AGENT_VERSION, FLASHBLOCKS_STREAM_PROTOCOL, Message},
             payload::{FlashblocksExecutionInfo, FlashblocksExtraCtx},
             payload_handler::PayloadHandler,
@@ -116,7 +115,7 @@ impl FlashblocksServiceBuilder {
         // Channels for built full block payloads
         let (built_payload_tx, built_payload_rx) = tokio::sync::mpsc::channel(16);
 
-        let p2p_cache = FlashblockPayloadsCache::new(self.0.flashblocks_per_block());
+        let p2p_cache = FlashblockPayloadsCache::new();
 
         let ws_pub: Arc<WebSocketPublisher> = WebSocketPublisher::new(
             self.0.specific.ws_addr,
