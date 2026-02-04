@@ -4,7 +4,9 @@ use crate::{
         BuilderConfig,
         builder_tx::BuilderTransactions,
         context::OpPayloadBuilderCtx,
-        flashblocks::{best_txs::BestFlashblocksTxs, config::FlashBlocksConfigExt},
+        flashblocks::{
+            best_txs::BestFlashblocksTxs, cache::FlashblockTxsCache, config::FlashBlocksConfigExt,
+        },
         generator::{BlockCell, BuildArguments, PayloadBuilder},
     },
     gas_limiter::AddressGasLimiter,
@@ -190,6 +192,8 @@ pub(super) struct OpPayloadBuilder<Pool, Client, BuilderTx, Tasks> {
     /// Sender for sending built full block payloads to [`PayloadHandler`],
     /// which updates the engine tree state.
     pub built_payload_tx: mpsc::Sender<OpBuiltPayload>,
+    /// Cache for externally received pending flashblocks transactions received via p2p.
+    pub p2p_txs_cache: FlashblockTxsCache,
     /// WebSocket publisher for broadcasting flashblocks
     /// to all connected subscribers.
     pub ws_pub: Arc<WebSocketPublisher>,
@@ -217,6 +221,7 @@ impl<Pool, Client, BuilderTx, Tasks> OpPayloadBuilder<Pool, Client, BuilderTx, T
         builder_tx: BuilderTx,
         built_fb_payload_tx: mpsc::Sender<OpFlashblockPayload>,
         built_payload_tx: mpsc::Sender<OpBuiltPayload>,
+        p2p_txs_cache: FlashblockTxsCache,
         ws_pub: Arc<WebSocketPublisher>,
         metrics: Arc<OpRBuilderMetrics>,
         task_metrics: Arc<FlashblocksTaskMetrics>,
@@ -229,6 +234,7 @@ impl<Pool, Client, BuilderTx, Tasks> OpPayloadBuilder<Pool, Client, BuilderTx, T
             task_executor,
             built_fb_payload_tx,
             built_payload_tx,
+            p2p_txs_cache,
             ws_pub,
             config,
             metrics,

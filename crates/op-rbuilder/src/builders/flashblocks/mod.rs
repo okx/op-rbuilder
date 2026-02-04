@@ -5,6 +5,7 @@ pub use service::FlashblocksServiceBuilder;
 
 mod best_txs;
 mod builder_tx;
+mod cache;
 mod config;
 mod ctx;
 mod monitor_xlayer;
