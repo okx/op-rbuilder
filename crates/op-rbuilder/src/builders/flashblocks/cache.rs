@@ -73,15 +73,35 @@ impl FlashblockPayloadsCacheInner {
         Ok(())
     }
 
+    /// Get the flashblocks sequence transactions for a given parent hash. Note that we do not
+    /// yield sequencer transactions that were included in the payload attributes.
+    ///
+    /// Returns `None` if the payloads are not in sequential order or have missing indexes.
     pub(crate) fn get_flashblocks_sequence_txs<T: SignedTransaction>(
         &self,
         parent_hash: B256,
     ) -> Option<Vec<WithEncoded<Recovered<T>>>> {
-        self.cache
-            .get(&parent_hash)?
-            .iter()
-            .flat_map(|payload| payload.recover_transactions())
-            .collect::<Result<_, _>>()
-            .ok()
+        let mut payloads = self.cache.get(&parent_hash)?;
+        payloads.sort_by_key(|p| p.index);
+        payloads.iter().skip(1).enumerate().try_fold(
+            Vec::with_capacity(payloads.len()),
+            |mut acc, (expected_index, payload)| {
+                if payload.index != (expected_index + 1) as u64 {
+                    tracing::warn!(
+                        expected = expected_index + 1,
+                        got = payload.index,
+                        "flashblock payloads have missing or out-of-order indexes"
+                    );
+                    return None;
+                }
+                acc.extend(
+                    payload
+                        .recover_transactions()
+                        .collect::<Result<Vec<_>, _>>()
+                        .ok()?,
+                );
+                Some(acc)
+            },
+        )
     }
 }
