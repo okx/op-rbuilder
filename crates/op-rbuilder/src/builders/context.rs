@@ -37,7 +37,7 @@ use reth_transaction_pool::{BestTransactionsAttributes, PoolTransaction};
 use revm::{DatabaseCommit, context::result::ResultAndState, interpreter::as_u64_saturated};
 use std::{sync::Arc, time::Instant};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 use crate::{
     gas_limiter::AddressGasLimiter,
@@ -46,6 +46,7 @@ use crate::{
     traits::PayloadTxsBounds,
     tx_signer::Signer,
 };
+use alloy_eips::eip2718::WithEncoded;
 
 /// Container type that holds all necessities to build a new payload.
 #[derive(Debug, Clone)]
@@ -377,6 +378,97 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
         info.da_footprint_scalar = da_footprint_gas_scalar;
 
         Ok(info)
+    }
+
+    /// Executes cached transactions received via P2P, used to replay previously sequenced flashblock
+    /// transactions when the builder changes before the full block is built.
+    pub(super) fn execute_cached_flashblocks_transactions<E: Debug + Default>(
+        &self,
+        info: &mut ExecutionInfo<E>,
+        db: &mut State<impl Database>,
+        cached_txs: Vec<WithEncoded<alloy_consensus::transaction::Recovered<OpTransactionSigned>>>,
+    ) -> Result<(), PayloadBuilderError> {
+        if cached_txs.is_empty() {
+            return Err(PayloadBuilderError::MissingPayload);
+        }
+
+        info!(
+            target: "payload_builder",
+            message = "Found cached transactions from P2P, replaying",
+            parent_hash = ?self.parent_hash(),
+            cached_tx_count = cached_txs.len(),
+        );
+
+        let mut cumulative_gas_used = info.cumulative_gas_used;
+        let mut cumulative_da_bytes_used = info.cumulative_da_bytes_used;
+        let mut total_fees = info.total_fees;
+        let mut receipts = Vec::with_capacity(cached_txs.len());
+        let mut executed_senders = Vec::with_capacity(cached_txs.len());
+        let mut executed_transactions = Vec::with_capacity(cached_txs.len());
+        let mut evm = self.evm_config.evm_with_env(&mut *db, self.evm_env.clone());
+        for with_encoded_tx in cached_txs {
+            let (encoded_bytes, recovered_tx) = with_encoded_tx.split();
+            let sender = recovered_tx.signer();
+
+            if recovered_tx.is_eip4844() || recovered_tx.is_deposit() {
+                return Err(PayloadBuilderError::other(
+                    OpPayloadBuilderError::BlobTransactionRejected,
+                ));
+            }
+
+            let ResultAndState { result, state } = match evm.transact(&recovered_tx) {
+                Ok(res) => res,
+                Err(err) => {
+                    trace!(
+                        target: "payload_builder",
+                        %err,
+                        ?recovered_tx,
+                        "Error replaying cached flashblock transaction"
+                    );
+                    return Err(PayloadBuilderError::EvmExecutionError(Box::new(err)));
+                }
+            };
+
+            // Add gas used by the transaction to cumulative gas used
+            let gas_used = result.gas_used();
+            cumulative_gas_used += gas_used;
+            // record tx da size
+            cumulative_da_bytes_used +=
+                op_alloy_flz::tx_estimated_size_fjord_bytes(encoded_bytes.as_ref());
+
+            // Push transaction changeset and calculate header bloom filter for receipt.
+            let ctx = ReceiptBuilderCtx {
+                tx: recovered_tx.inner(),
+                evm: &evm,
+                result,
+                state: &state,
+                cumulative_gas_used: cumulative_gas_used,
+            };
+            receipts.push(self.build_receipt(ctx, None));
+
+            // Commit changes
+            evm.db_mut().commit(state);
+
+            // update add to total fees
+            let miner_fee = recovered_tx
+                .effective_tip_per_gas(self.base_fee())
+                .expect("fee is always valid; execution succeeded");
+            total_fees += U256::from(miner_fee) * U256::from(gas_used);
+
+            // Append sender and transaction to the respective lists
+            executed_senders.push(sender);
+            executed_transactions.push(recovered_tx.into_inner());
+        }
+
+        // Atomic update the execution info on successful replay
+        info.cumulative_gas_used = cumulative_gas_used;
+        info.cumulative_da_bytes_used = cumulative_da_bytes_used;
+        info.total_fees = total_fees;
+        info.receipts.extend(receipts);
+        info.executed_senders.extend(executed_senders);
+        info.executed_transactions.extend(executed_transactions);
+
+        Ok(())
     }
 
     /// Executes the given best transactions and updates the execution info.

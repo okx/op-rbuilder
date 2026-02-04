@@ -1,6 +1,6 @@
 use crate::{
     builders::flashblocks::{
-        cache::FlashblockTxsCache, ctx::OpPayloadSyncerCtx, p2p::Message,
+        cache::FlashblockPayloadsCache, ctx::OpPayloadSyncerCtx, p2p::Message,
         payload::FlashblocksExecutionInfo, wspub::WebSocketPublisher,
     },
     primitives::reth::ExecutionInfo,
@@ -46,7 +46,7 @@ pub(crate) struct PayloadHandler<Client, Tasks> {
     // sends a `Events::BuiltPayload` to the reth payload builder when a new payload is received.
     payload_events_handle: tokio::sync::broadcast::Sender<Events<OpEngineTypes>>,
     // cache for externally received pending flashblocks transactions received via p2p.
-    p2p_txs_cache: FlashblockTxsCache,
+    p2p_cache: Option<FlashblockPayloadsCache>,
     // websocket publisher for broadcasting flashblocks to all connected subscribers.
     ws_pub: Arc<WebSocketPublisher>,
     // context required for execution of blocks during syncing
@@ -73,7 +73,7 @@ where
         p2p_rx: mpsc::Receiver<Message>,
         p2p_tx: mpsc::Sender<Message>,
         payload_events_handle: tokio::sync::broadcast::Sender<Events<OpEngineTypes>>,
-        p2p_txs_cache: FlashblockTxsCache,
+        p2p_cache: Option<FlashblockPayloadsCache>,
         ws_pub: Arc<WebSocketPublisher>,
         ctx: OpPayloadSyncerCtx,
         client: Client,
@@ -89,7 +89,7 @@ where
             p2p_rx,
             p2p_tx,
             payload_events_handle,
-            p2p_txs_cache,
+            p2p_cache,
             ws_pub,
             ctx,
             client,
@@ -107,7 +107,7 @@ where
             mut p2p_rx,
             p2p_tx,
             payload_events_handle,
-            p2p_txs_cache,
+            p2p_cache,
             ws_pub,
             ctx,
             client,
@@ -188,8 +188,10 @@ where
                             if let Err(e) = ws_pub.publish(&fb_payload) {
                                 warn!(target: "payload_builder", e = ?e, "failed to publish flashblock to websocket publisher");
                             }
-                            if let Err(e) = p2p_txs_cache.add_flashblock_txs(fb_payload) {
-                                warn!(target: "payload_builder", e = ?e, "failed to add flashblock txs to cache");
+                            if let Some(p2p_cache) = &p2p_cache {
+                                if let Err(e) = p2p_cache.add_flashblock_payload(fb_payload) {
+                                    warn!(target: "payload_builder", e = ?e, "failed to add flashblock txs to cache");
+                                }
                             }
                         }
                     }

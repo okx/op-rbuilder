@@ -10,29 +10,36 @@ use reth_primitives_traits::SignedTransaction;
 const MAX_BLOCKS_CACHE_SIZE: u64 = 3;
 
 #[derive(Debug, Clone)]
-pub(crate) struct FlashblockTxsCache {
-    cache: Arc<FlashblockTxsCacheInner>,
+pub(crate) struct FlashblockPayloadsCache {
+    cache: Arc<FlashblockPayloadsCacheInner>,
 }
 
-impl FlashblockTxsCache {
+impl FlashblockPayloadsCache {
     pub(crate) fn new(flashblocks_per_block: u64) -> Self {
         Self {
-            cache: Arc::new(FlashblockTxsCacheInner::new(flashblocks_per_block)),
+            cache: Arc::new(FlashblockPayloadsCacheInner::new(flashblocks_per_block)),
         }
     }
 
-    pub(crate) fn add_flashblock_txs(&self, payload: OpFlashblockPayload) -> eyre::Result<()> {
-        self.cache.add_flashblock_txs(payload)
+    pub(crate) fn add_flashblock_payload(&self, payload: OpFlashblockPayload) -> eyre::Result<()> {
+        self.cache.add_flashblock_payload(payload)
+    }
+
+    pub(crate) fn get_flashblocks_sequence_txs<T: SignedTransaction>(
+        &self,
+        parent_hash: B256,
+    ) -> Option<Vec<WithEncoded<Recovered<T>>>> {
+        self.cache.get_flashblocks_sequence_txs(parent_hash)
     }
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FlashblockTxsCacheInner {
+pub(crate) struct FlashblockPayloadsCacheInner {
     cache: Cache<B256, Vec<OpFlashblockPayload>>,
     flashblocks_per_block: usize,
 }
 
-impl FlashblockTxsCacheInner {
+impl FlashblockPayloadsCacheInner {
     pub(crate) fn new(flashblocks_per_block: u64) -> Self {
         Self {
             cache: Cache::builder()
@@ -43,7 +50,7 @@ impl FlashblockTxsCacheInner {
         }
     }
 
-    pub(crate) fn add_flashblock_txs(&self, payload: OpFlashblockPayload) -> eyre::Result<()> {
+    pub(crate) fn add_flashblock_payload(&self, payload: OpFlashblockPayload) -> eyre::Result<()> {
         let parent_hash = payload
             .parent_hash()
             .ok_or_else(|| eyre::eyre!("parent hash in flashblock payload not found"))?;
@@ -66,7 +73,7 @@ impl FlashblockTxsCacheInner {
         Ok(())
     }
 
-    pub(crate) fn get_flashblock_txs<T: SignedTransaction>(
+    pub(crate) fn get_flashblocks_sequence_txs<T: SignedTransaction>(
         &self,
         parent_hash: B256,
     ) -> Option<Vec<WithEncoded<Recovered<T>>>> {

@@ -5,7 +5,8 @@ use crate::{
         builder_tx::BuilderTransactions,
         context::OpPayloadBuilderCtx,
         flashblocks::{
-            best_txs::BestFlashblocksTxs, cache::FlashblockTxsCache, config::FlashBlocksConfigExt,
+            best_txs::BestFlashblocksTxs, cache::FlashblockPayloadsCache,
+            config::FlashBlocksConfigExt,
         },
         generator::{BlockCell, BuildArguments, PayloadBuilder},
     },
@@ -193,7 +194,7 @@ pub(super) struct OpPayloadBuilder<Pool, Client, BuilderTx, Tasks> {
     /// which updates the engine tree state.
     pub built_payload_tx: mpsc::Sender<OpBuiltPayload>,
     /// Cache for externally received pending flashblocks transactions received via p2p.
-    pub p2p_txs_cache: FlashblockTxsCache,
+    pub p2p_cache: Option<FlashblockPayloadsCache>,
     /// WebSocket publisher for broadcasting flashblocks
     /// to all connected subscribers.
     pub ws_pub: Arc<WebSocketPublisher>,
@@ -221,7 +222,7 @@ impl<Pool, Client, BuilderTx, Tasks> OpPayloadBuilder<Pool, Client, BuilderTx, T
         builder_tx: BuilderTx,
         built_fb_payload_tx: mpsc::Sender<OpFlashblockPayload>,
         built_payload_tx: mpsc::Sender<OpBuiltPayload>,
-        p2p_txs_cache: FlashblockTxsCache,
+        p2p_cache: Option<FlashblockPayloadsCache>,
         ws_pub: Arc<WebSocketPublisher>,
         metrics: Arc<OpRBuilderMetrics>,
         task_metrics: Arc<FlashblocksTaskMetrics>,
@@ -234,7 +235,7 @@ impl<Pool, Client, BuilderTx, Tasks> OpPayloadBuilder<Pool, Client, BuilderTx, T
             task_executor,
             built_fb_payload_tx,
             built_payload_tx,
-            p2p_txs_cache,
+            p2p_cache,
             ws_pub,
             config,
             metrics,
@@ -424,6 +425,31 @@ where
             );
         };
 
+        // Check if need to rebuild from external p2p payload cache
+        let parent_hash = ctx.parent().hash();
+        let rebuild_flag = self
+            .p2p_cache
+            .as_ref()
+            .map(|cache| cache.get_flashblocks_sequence_txs::<OpTransactionSigned>(parent_hash))
+            .flatten()
+            .is_some_and(|cached_txs| {
+                info!(
+                    target: "payload_builder",
+                    message = "Found cached transactions from P2P, replaying",
+                    parent_hash = %parent_hash,
+                    cached_tx_count = cached_txs.len(),
+                );
+
+                ctx.execute_cached_flashblocks_transactions(&mut info, &mut state, cached_txs)
+                    .inspect_err(|e| {
+                        warn!(
+                            target: "payload_builder",
+                            "Failed rebuilding cached flashblock payloads: {e}. Continuing with fresh build",
+                        );
+                    })
+                    .is_ok()
+            });
+
         // We should always calculate state root for fallback payload
         let (fallback_payload, fb_payload, bundle_state, new_tx_hashes) =
             build_block(&mut state, &ctx, &mut info, true)?;
@@ -455,10 +481,10 @@ where
             );
         }
 
-        if ctx.attributes().no_tx_pool {
+        if ctx.attributes().no_tx_pool || rebuild_flag {
             info!(
                 target: "payload_builder",
-                "No transaction pool, skipping transaction pool processing",
+                "No transaction pool or rebuilding from external cache, skipping transaction pool processing",
             );
 
             let total_block_building_time = block_build_start_time.elapsed();

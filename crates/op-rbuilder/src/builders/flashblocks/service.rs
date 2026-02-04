@@ -5,7 +5,7 @@ use crate::{
         builder_tx::BuilderTransactions,
         flashblocks::{
             builder_tx::{FlashblocksBuilderTx, FlashblocksNumberBuilderTx},
-            cache::FlashblockTxsCache,
+            cache::FlashblockPayloadsCache,
             config::FlashBlocksConfigExt,
             p2p::{AGENT_VERSION, FLASHBLOCKS_STREAM_PROTOCOL, Message},
             payload::{FlashblocksExecutionInfo, FlashblocksExtraCtx},
@@ -36,6 +36,7 @@ impl FlashblocksServiceBuilder {
         ctx: &BuilderContext<Node>,
         pool: Pool,
         builder_tx: BuilderTx,
+        rebuild_from_p2p: bool,
     ) -> eyre::Result<PayloadBuilderHandle<<Node::Types as NodeTypes>::Payload>>
     where
         Node: NodeBounds,
@@ -116,7 +117,9 @@ impl FlashblocksServiceBuilder {
         // Channels for built full block payloads
         let (built_payload_tx, built_payload_rx) = tokio::sync::mpsc::channel(16);
 
-        let p2p_txs_cache = FlashblockTxsCache::new(self.0.flashblocks_per_block());
+        let p2p_cache =
+            rebuild_from_p2p.then(|| FlashblockPayloadsCache::new(self.0.flashblocks_per_block()));
+
         let ws_pub: Arc<WebSocketPublisher> = WebSocketPublisher::new(
             self.0.specific.ws_addr,
             metrics.clone(),
@@ -134,7 +137,7 @@ impl FlashblocksServiceBuilder {
             builder_tx,
             built_fb_payload_tx,
             built_payload_tx,
-            p2p_txs_cache.clone(),
+            p2p_cache.clone(),
             ws_pub.clone(),
             metrics.clone(),
             task_metrics.clone(),
@@ -167,7 +170,7 @@ impl FlashblocksServiceBuilder {
             incoming_message_rx,
             outgoing_message_tx,
             payload_service.payload_events_handle(),
-            p2p_txs_cache.clone(),
+            p2p_cache.clone(),
             ws_pub.clone(),
             syncer_ctx,
             ctx.provider().clone(),
@@ -246,12 +249,14 @@ where
                     use_permit,
                     flashtestations_builder_tx,
                 ),
+                false,
             )
         } else {
             self.spawn_payload_builder_service(
                 ctx,
                 pool,
                 FlashblocksBuilderTx::new(signer, flashtestations_builder_tx),
+                signer.is_none(),
             )
         }
     }
