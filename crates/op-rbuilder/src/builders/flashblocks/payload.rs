@@ -429,7 +429,9 @@ where
         let rebuild_flag = self
             .p2p_cache
             .as_ref()
-            .and_then(|cache| cache.get_flashblocks_sequence_txs::<OpTransactionSigned>(ctx.parent().hash()))
+            .and_then(|cache| {
+                cache.get_flashblocks_sequence_txs::<OpTransactionSigned>(ctx.parent().hash())
+            })
             .is_some_and(|cached_txs| {
                 ctx.execute_cached_flashblocks_transactions(&mut info, &mut state, cached_txs)
                     .inspect_err(|e| {
