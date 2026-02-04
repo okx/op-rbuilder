@@ -83,6 +83,8 @@ impl FlashblockPayloadsCacheInner {
     ) -> Option<Vec<WithEncoded<Recovered<T>>>> {
         let mut payloads = self.cache.get(&parent_hash)?;
         payloads.sort_by_key(|p| p.index);
+
+        // Skip base payload index 0 (sequencer transactions)
         payloads.iter().skip(1).enumerate().try_fold(
             Vec::with_capacity(payloads.len()),
             |mut acc, (expected_index, payload)| {

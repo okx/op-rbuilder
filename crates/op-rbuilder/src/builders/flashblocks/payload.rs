@@ -413,7 +413,7 @@ where
         ctx.metrics.sequencer_tx_gauge.set(sequencer_tx_time);
 
         // Check if need to rebuild from external p2p payload cache
-        let rebuild_flag = self
+        let rebuild_external_payload = self
             .p2p_cache
             .get_flashblocks_sequence_txs::<OpTransactionSigned>(ctx.parent().hash())
             .is_some_and(|cached_txs| {
@@ -427,9 +427,9 @@ where
                     .is_ok()
             });
 
-        // We add first builder tx right after deposits
+        // We add first builder tx right after deposits. Skip if rebuilding from external payload cache
         if !ctx.attributes().no_tx_pool
-            && !rebuild_flag
+            && !rebuild_external_payload
             && let Err(e) =
                 self.builder_tx
                     .add_builder_txs(&state_provider, &mut info, &ctx, &mut state, false)
@@ -444,7 +444,7 @@ where
         // We should always calculate state root for fallback payload
         let (fallback_payload, fb_payload, bundle_state, new_tx_hashes) =
             build_block(&mut state, &ctx, &mut info, true)?;
-        if !rebuild_flag {
+        if !rebuild_external_payload {
             self.built_fb_payload_tx
                 .try_send(fb_payload.clone())
                 .map_err(PayloadBuilderError::other)?;
@@ -474,7 +474,7 @@ where
             );
         }
 
-        if ctx.attributes().no_tx_pool || rebuild_flag {
+        if ctx.attributes().no_tx_pool || rebuild_external_payload {
             info!(
                 target: "payload_builder",
                 "No transaction pool or rebuilt from already known flashblocks sequence, skipping transaction pool processing",
