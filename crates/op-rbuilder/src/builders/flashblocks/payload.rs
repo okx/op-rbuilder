@@ -477,7 +477,7 @@ where
         if ctx.attributes().no_tx_pool || rebuild_external_payload {
             info!(
                 target: "payload_builder",
-                "No transaction pool or rebuilt from already known flashblocks sequence, skipping transaction pool processing",
+                "No transaction pool or rebuilding from known flashblocks sequence, skipping transaction pool processing",
             );
 
             let total_block_building_time = block_build_start_time.elapsed();
