@@ -164,7 +164,7 @@ where
 
                             // execute the built full payload on a thread where blocking is acceptable,
                             // as it's potentially a heavy operation
-                            task_executor.spawn(Box::pin(async move {
+                            task_executor.spawn_blocking(Box::pin(async move {
                                 let res = execute_flashblock(
                                     payload,
                                     ctx,
