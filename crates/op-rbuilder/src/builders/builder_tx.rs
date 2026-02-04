@@ -1,10 +1,10 @@
 use alloy_consensus::TxEip1559;
-use alloy_eips::{Encodable2718, eip7623::TOTAL_COST_FLOOR_PER_TOKEN};
-use alloy_evm::{Database, rpc::TryIntoTxEnv};
+use alloy_eips::{eip7623::TOTAL_COST_FLOOR_PER_TOKEN, Encodable2718};
+use alloy_evm::{rpc::TryIntoTxEnv, Database};
 use alloy_op_evm::OpEvm;
 use alloy_primitives::{
-    Address, B256, Bytes, TxKind, U256,
     map::{HashMap, HashSet},
+    Address, Bytes, TxKind, B256, U256,
 };
 use alloy_sol_types::{ContractError, Revert, SolCall, SolError, SolInterface};
 use core::fmt::Debug;
@@ -12,20 +12,20 @@ use op_alloy_consensus::OpTypedTransaction;
 use op_alloy_rpc_types::OpTransactionRequest;
 use op_revm::{OpHaltReason, OpTransactionError};
 use reth_evm::{
-    ConfigureEvm, Evm, EvmError, InvalidTxError, eth::receipt_builder::ReceiptBuilderCtx,
-    precompiles::PrecompilesMap,
+    eth::receipt_builder::ReceiptBuilderCtx, precompiles::PrecompilesMap, ConfigureEvm, Evm,
+    EvmError, InvalidTxError,
 };
 use reth_node_api::PayloadBuilderError;
 use reth_optimism_primitives::OpTransactionSigned;
 use reth_primitives::Recovered;
 use reth_provider::{ProviderError, StateProvider};
-use reth_revm::{State, database::StateProviderDatabase};
+use reth_revm::{database::StateProviderDatabase, State};
 use reth_rpc_api::eth::EthTxEnvError;
 use revm::{
-    DatabaseCommit, DatabaseRef,
     context::result::{EVMError, ExecutionResult, ResultAndState},
     inspector::NoOpInspector,
     state::Account,
+    DatabaseCommit, DatabaseRef,
 };
 use tracing::{trace, warn};
 
@@ -235,7 +235,7 @@ pub trait BuilderTransactions<ExtraCtx: Debug + Default = (), Extra: Debug + Def
                 info.cumulative_da_bytes_used += builder_tx.da_size;
 
                 let ctx = ReceiptBuilderCtx {
-                    tx: builder_tx.signed_tx.inner(),
+                    tx_type: builder_tx.signed_tx.inner().tx_type(),
                     evm: &evm,
                     result,
                     state: &state,

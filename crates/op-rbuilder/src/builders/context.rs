@@ -251,7 +251,7 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
     /// Constructs a receipt for the given transaction.
     pub fn build_receipt<E: Evm>(
         &self,
-        ctx: ReceiptBuilderCtx<'_, OpTransactionSigned, E>,
+        ctx: ReceiptBuilderCtx<'_, op_alloy_consensus::OpTxType, E>,
         deposit_nonce: Option<u64>,
     ) -> OpReceipt {
         let receipt_builder = self.evm_config.block_executor_factory().receipt_builder();
@@ -349,7 +349,7 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
             }
 
             let ctx = ReceiptBuilderCtx {
-                tx: sequencer_tx.inner(),
+                tx_type: sequencer_tx.inner().tx_type(),
                 evm: &evm,
                 result,
                 state: &state,
@@ -557,7 +557,7 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
 
             // Push transaction changeset and calculate header bloom filter for receipt.
             let ctx = ReceiptBuilderCtx {
-                tx: tx.inner(),
+                tx_type: tx.inner().tx_type(),
                 evm: &evm,
                 result,
                 state: &state,
