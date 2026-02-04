@@ -36,7 +36,6 @@ impl FlashblocksServiceBuilder {
         ctx: &BuilderContext<Node>,
         pool: Pool,
         builder_tx: BuilderTx,
-        rebuild_from_p2p: bool,
     ) -> eyre::Result<PayloadBuilderHandle<<Node::Types as NodeTypes>::Payload>>
     where
         Node: NodeBounds,
@@ -117,8 +116,7 @@ impl FlashblocksServiceBuilder {
         // Channels for built full block payloads
         let (built_payload_tx, built_payload_rx) = tokio::sync::mpsc::channel(16);
 
-        let p2p_cache =
-            rebuild_from_p2p.then(|| FlashblockPayloadsCache::new(self.0.flashblocks_per_block()));
+        let p2p_cache = FlashblockPayloadsCache::new(self.0.flashblocks_per_block());
 
         let ws_pub: Arc<WebSocketPublisher> = WebSocketPublisher::new(
             self.0.specific.ws_addr,
@@ -249,15 +247,12 @@ where
                     use_permit,
                     flashtestations_builder_tx,
                 ),
-                false,
             )
         } else {
-            let rebuild_from_p2p = signer.is_none() && flashtestations_builder_tx.is_none();
             self.spawn_payload_builder_service(
                 ctx,
                 pool,
                 FlashblocksBuilderTx::new(signer, flashtestations_builder_tx),
-                rebuild_from_p2p,
             )
         }
     }

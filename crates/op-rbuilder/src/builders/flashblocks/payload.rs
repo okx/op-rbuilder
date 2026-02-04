@@ -194,7 +194,7 @@ pub(super) struct OpPayloadBuilder<Pool, Client, BuilderTx, Tasks> {
     /// which updates the engine tree state.
     pub built_payload_tx: mpsc::Sender<OpBuiltPayload>,
     /// Cache for externally received pending flashblocks transactions received via p2p.
-    pub p2p_cache: Option<FlashblockPayloadsCache>,
+    pub p2p_cache: FlashblockPayloadsCache,
     /// WebSocket publisher for broadcasting flashblocks
     /// to all connected subscribers.
     pub ws_pub: Arc<WebSocketPublisher>,
@@ -222,7 +222,7 @@ impl<Pool, Client, BuilderTx, Tasks> OpPayloadBuilder<Pool, Client, BuilderTx, T
         builder_tx: BuilderTx,
         built_fb_payload_tx: mpsc::Sender<OpFlashblockPayload>,
         built_payload_tx: mpsc::Sender<OpBuiltPayload>,
-        p2p_cache: Option<FlashblockPayloadsCache>,
+        p2p_cache: FlashblockPayloadsCache,
         ws_pub: Arc<WebSocketPublisher>,
         metrics: Arc<OpRBuilderMetrics>,
         task_metrics: Arc<FlashblocksTaskMetrics>,
@@ -412,26 +412,10 @@ where
         ctx.metrics.sequencer_tx_duration.record(sequencer_tx_time);
         ctx.metrics.sequencer_tx_gauge.set(sequencer_tx_time);
 
-        // We add first builder tx right after deposits
-        if !ctx.attributes().no_tx_pool
-            && let Err(e) =
-                self.builder_tx
-                    .add_builder_txs(&state_provider, &mut info, &ctx, &mut state, false)
-        {
-            error!(
-                target: "payload_builder",
-                "Error adding builder txs to fallback block: {}",
-                e
-            );
-        };
-
         // Check if need to rebuild from external p2p payload cache
         let rebuild_flag = self
             .p2p_cache
-            .as_ref()
-            .and_then(|cache| {
-                cache.get_flashblocks_sequence_txs::<OpTransactionSigned>(ctx.parent().hash())
-            })
+            .get_flashblocks_sequence_txs::<OpTransactionSigned>(ctx.parent().hash())
             .is_some_and(|cached_txs| {
                 ctx.execute_cached_flashblocks_transactions(&mut info, &mut state, cached_txs)
                     .inspect_err(|e| {
@@ -442,6 +426,20 @@ where
                     })
                     .is_ok()
             });
+
+        // We add first builder tx right after deposits
+        if !ctx.attributes().no_tx_pool
+            && !rebuild_flag
+            && let Err(e) =
+                self.builder_tx
+                    .add_builder_txs(&state_provider, &mut info, &ctx, &mut state, false)
+        {
+            error!(
+                target: "payload_builder",
+                "Error adding builder txs to fallback block: {}",
+                e
+            );
+        };
 
         // We should always calculate state root for fallback payload
         let (fallback_payload, fb_payload, bundle_state, new_tx_hashes) =
