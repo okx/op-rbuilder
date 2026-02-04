@@ -252,11 +252,12 @@ where
                 false,
             )
         } else {
+            let rebuild_from_p2p = signer.is_none() && flashtestations_builder_tx.is_none();
             self.spawn_payload_builder_service(
                 ctx,
                 pool,
                 FlashblocksBuilderTx::new(signer, flashtestations_builder_tx),
-                signer.is_none(),
+                rebuild_from_p2p,
             )
         }
     }

@@ -389,7 +389,11 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
         cached_txs: Vec<WithEncoded<alloy_consensus::transaction::Recovered<OpTransactionSigned>>>,
     ) -> Result<(), PayloadBuilderError> {
         if cached_txs.is_empty() {
-            return Err(PayloadBuilderError::MissingPayload);
+            // Flashblocks sequence built contains no transactions. We can continue build from fresh
+            // since no replaying required.
+            return Err(PayloadBuilderError::Other(
+                eyre::eyre!("cached sequence is empty").into(),
+            ));
         }
 
         info!(
@@ -410,9 +414,14 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
             let (encoded_bytes, recovered_tx) = with_encoded_tx.split();
             let sender = recovered_tx.signer();
 
-            if recovered_tx.is_eip4844() || recovered_tx.is_deposit() {
+            if recovered_tx.is_eip4844() {
                 return Err(PayloadBuilderError::other(
                     OpPayloadBuilderError::BlobTransactionRejected,
+                ));
+            }
+            if recovered_tx.is_deposit() {
+                return Err(PayloadBuilderError::Other(
+                    eyre::eyre!("invalid payload sequence, deposit transaction rejected").into(),
                 ));
             }
 
@@ -442,7 +451,7 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
                 evm: &evm,
                 result,
                 state: &state,
-                cumulative_gas_used: cumulative_gas_used,
+                cumulative_gas_used,
             };
             receipts.push(self.build_receipt(ctx, None));
 

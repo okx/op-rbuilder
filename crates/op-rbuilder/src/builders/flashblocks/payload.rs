@@ -426,25 +426,16 @@ where
         };
 
         // Check if need to rebuild from external p2p payload cache
-        let parent_hash = ctx.parent().hash();
         let rebuild_flag = self
             .p2p_cache
             .as_ref()
-            .map(|cache| cache.get_flashblocks_sequence_txs::<OpTransactionSigned>(parent_hash))
-            .flatten()
+            .and_then(|cache| cache.get_flashblocks_sequence_txs::<OpTransactionSigned>(ctx.parent().hash()))
             .is_some_and(|cached_txs| {
-                info!(
-                    target: "payload_builder",
-                    message = "Found cached transactions from P2P, replaying",
-                    parent_hash = %parent_hash,
-                    cached_tx_count = cached_txs.len(),
-                );
-
                 ctx.execute_cached_flashblocks_transactions(&mut info, &mut state, cached_txs)
                     .inspect_err(|e| {
                         warn!(
                             target: "payload_builder",
-                            "Failed rebuilding cached flashblock payloads: {e}. Continuing with fresh build",
+                            "Failed rebuilding known flashblock payloads: {e}. Continuing with fresh build",
                         );
                     })
                     .is_ok()
@@ -453,9 +444,11 @@ where
         // We should always calculate state root for fallback payload
         let (fallback_payload, fb_payload, bundle_state, new_tx_hashes) =
             build_block(&mut state, &ctx, &mut info, true)?;
-        self.built_fb_payload_tx
-            .try_send(fb_payload.clone())
-            .map_err(PayloadBuilderError::other)?;
+        if !rebuild_flag {
+            self.built_fb_payload_tx
+                .try_send(fb_payload.clone())
+                .map_err(PayloadBuilderError::other)?;
+        }
         let mut best_payload = (fallback_payload.clone(), bundle_state);
 
         info!(
@@ -484,7 +477,7 @@ where
         if ctx.attributes().no_tx_pool || rebuild_flag {
             info!(
                 target: "payload_builder",
-                "No transaction pool or rebuilding from external cache, skipping transaction pool processing",
+                "No transaction pool or rebuilt from already known flashblocks sequence, skipping transaction pool processing",
             );
 
             let total_block_building_time = block_build_start_time.elapsed();
