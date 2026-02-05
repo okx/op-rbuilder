@@ -4,7 +4,10 @@ use crate::{
         BuilderConfig,
         builder_tx::BuilderTransactions,
         context::OpPayloadBuilderCtx,
-        flashblocks::{best_txs::BestFlashblocksTxs, config::FlashBlocksConfigExt},
+        flashblocks::{
+            best_txs::BestFlashblocksTxs, cache::FlashblockPayloadsCache,
+            config::FlashBlocksConfigExt,
+        },
         generator::{BlockCell, BuildArguments, PayloadBuilder},
     },
     gas_limiter::AddressGasLimiter,
@@ -190,6 +193,8 @@ pub(super) struct OpPayloadBuilder<Pool, Client, BuilderTx, Tasks> {
     /// Sender for sending built full block payloads to [`PayloadHandler`],
     /// which updates the engine tree state.
     pub built_payload_tx: mpsc::Sender<OpBuiltPayload>,
+    /// Cache for externally received pending flashblocks transactions received via p2p.
+    pub p2p_cache: FlashblockPayloadsCache,
     /// WebSocket publisher for broadcasting flashblocks
     /// to all connected subscribers.
     pub ws_pub: Arc<WebSocketPublisher>,
@@ -217,6 +222,7 @@ impl<Pool, Client, BuilderTx, Tasks> OpPayloadBuilder<Pool, Client, BuilderTx, T
         builder_tx: BuilderTx,
         built_fb_payload_tx: mpsc::Sender<OpFlashblockPayload>,
         built_payload_tx: mpsc::Sender<OpBuiltPayload>,
+        p2p_cache: FlashblockPayloadsCache,
         ws_pub: Arc<WebSocketPublisher>,
         metrics: Arc<OpRBuilderMetrics>,
         task_metrics: Arc<FlashblocksTaskMetrics>,
@@ -229,6 +235,7 @@ impl<Pool, Client, BuilderTx, Tasks> OpPayloadBuilder<Pool, Client, BuilderTx, T
             task_executor,
             built_fb_payload_tx,
             built_payload_tx,
+            p2p_cache,
             ws_pub,
             config,
             metrics,
@@ -405,8 +412,30 @@ where
         ctx.metrics.sequencer_tx_duration.record(sequencer_tx_time);
         ctx.metrics.sequencer_tx_gauge.set(sequencer_tx_time);
 
+        // Check if need to rebuild from external p2p payload cache. If cache hit but the sequence contains
+        // no transactions, we can continue the build from fresh since no replaying required.
+        let rebuild_external_payload = self
+            .p2p_cache
+            .get_flashblocks_sequence_txs::<OpTransactionSigned>(ctx.parent().hash())
+            .filter(|cached_txs| !cached_txs.is_empty())
+            .map(|cached_txs| {
+                // The execution result is discarded here since even on replay errors, we will resolve the
+                // payload till whichever point the replay failed.
+                let _ = ctx
+                    .execute_cached_flashblocks_transactions(&mut info, &mut state, cached_txs)
+                    .inspect_err(|e| {
+                        warn!(
+                            target: "payload_builder",
+                            "Failed replaying external cached flashblocks sequence fully, error: {e}",
+                        );
+                    });
+            })
+            .is_some();
+
         // We add first builder tx right after deposits
+        // For X Layer - skip if replaying
         if !ctx.attributes().no_tx_pool
+            && !rebuild_external_payload
             && let Err(e) =
                 self.builder_tx
                     .add_builder_txs(&state_provider, &mut info, &ctx, &mut state, false)
@@ -421,9 +450,12 @@ where
         // We should always calculate state root for fallback payload
         let (fallback_payload, fb_payload, bundle_state, new_tx_hashes) =
             build_block(&mut state, &ctx, &mut info, true)?;
-        self.built_fb_payload_tx
-            .try_send(fb_payload.clone())
-            .map_err(PayloadBuilderError::other)?;
+        // For X Layer - skip if replaying
+        if !rebuild_external_payload {
+            self.built_fb_payload_tx
+                .try_send(fb_payload.clone())
+                .map_err(PayloadBuilderError::other)?;
+        }
         let mut best_payload = (fallback_payload.clone(), bundle_state);
 
         info!(
@@ -433,7 +465,8 @@ where
         );
 
         // not emitting flashblock if no_tx_pool in FCU, it's just syncing
-        if !ctx.attributes().no_tx_pool {
+        // For X Layer - skip if replaying
+        if !ctx.attributes().no_tx_pool && !rebuild_external_payload {
             let flashblock_byte_size = self
                 .ws_pub
                 .publish(&fb_payload)
@@ -449,10 +482,11 @@ where
             );
         }
 
-        if ctx.attributes().no_tx_pool {
+        // For X Layer - resolve payload if replaying
+        if ctx.attributes().no_tx_pool || rebuild_external_payload {
             info!(
                 target: "payload_builder",
-                "No transaction pool, skipping transaction pool processing",
+                "No transaction pool or rebuilding from known flashblocks sequence, skipping transaction pool processing",
             );
 
             let total_block_building_time = block_build_start_time.elapsed();

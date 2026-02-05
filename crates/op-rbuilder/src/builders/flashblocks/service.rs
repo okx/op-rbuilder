@@ -5,6 +5,7 @@ use crate::{
         builder_tx::BuilderTransactions,
         flashblocks::{
             builder_tx::{FlashblocksBuilderTx, FlashblocksNumberBuilderTx},
+            cache::FlashblockPayloadsCache,
             p2p::{AGENT_VERSION, FLASHBLOCKS_STREAM_PROTOCOL, Message},
             payload::{FlashblocksExecutionInfo, FlashblocksExtraCtx},
             payload_handler::PayloadHandler,
@@ -114,6 +115,8 @@ impl FlashblocksServiceBuilder {
         // Channels for built full block payloads
         let (built_payload_tx, built_payload_rx) = tokio::sync::mpsc::channel(16);
 
+        let p2p_cache = FlashblockPayloadsCache::new();
+
         let ws_pub: Arc<WebSocketPublisher> = WebSocketPublisher::new(
             self.0.specific.ws_addr,
             metrics.clone(),
@@ -131,6 +134,7 @@ impl FlashblocksServiceBuilder {
             builder_tx,
             built_fb_payload_tx,
             built_payload_tx,
+            p2p_cache.clone(),
             ws_pub.clone(),
             metrics.clone(),
             task_metrics.clone(),
@@ -163,6 +167,7 @@ impl FlashblocksServiceBuilder {
             incoming_message_rx,
             outgoing_message_tx,
             payload_service.payload_events_handle(),
+            p2p_cache.clone(),
             ws_pub.clone(),
             syncer_ctx,
             ctx.provider().clone(),
