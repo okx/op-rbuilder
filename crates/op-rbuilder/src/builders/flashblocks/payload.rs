@@ -412,28 +412,28 @@ where
         ctx.metrics.sequencer_tx_duration.record(sequencer_tx_time);
         ctx.metrics.sequencer_tx_gauge.set(sequencer_tx_time);
 
-        // Check if need to rebuild from external p2p payload cache
+        // Check if need to rebuild from external p2p payload cache. If cache hit but the sequence contains
+        // no transactions, we can continue the build from fresh since no replaying required.
         let rebuild_external_payload = self
             .p2p_cache
             .get_flashblocks_sequence_txs::<OpTransactionSigned>(ctx.parent().hash())
-            .is_some_and(|cached_txs| {
-                if cached_txs.is_empty() {
-                    // Flashblocks sequence built contains no transactions. We can continue build from fresh
-                    // since no replaying required.
-                    return false;
-                }
-
-                ctx.execute_cached_flashblocks_transactions(&mut info, &mut state, cached_txs)
+            .filter(|cached_txs| !cached_txs.is_empty())
+            .map(|cached_txs| {
+                // The execution result is discarded here since even on replay errors, we will resolve the
+                // payload till whichever point the replay failed.
+                let _ = ctx
+                    .execute_cached_flashblocks_transactions(&mut info, &mut state, cached_txs)
                     .inspect_err(|e| {
                         warn!(
                             target: "payload_builder",
-                            "Failed rebuilding known flashblock payloads: {e}. Continuing with fresh build",
+                            "Failed replaying external cached flashblocks sequence fully, error: {e}",
                         );
-                    })
-                    .is_ok()
-            });
+                    });
+            })
+            .is_some();
 
-        // We add first builder tx right after deposits. Skip if replaying
+        // We add first builder tx right after deposits
+        // For X Layer - skip if replaying
         if !ctx.attributes().no_tx_pool
             && !rebuild_external_payload
             && let Err(e) =
@@ -450,6 +450,7 @@ where
         // We should always calculate state root for fallback payload
         let (fallback_payload, fb_payload, bundle_state, new_tx_hashes) =
             build_block(&mut state, &ctx, &mut info, true)?;
+        // For X Layer - skip if replaying
         if !rebuild_external_payload {
             self.built_fb_payload_tx
                 .try_send(fb_payload.clone())
@@ -463,7 +464,8 @@ where
             payload_id = fb_payload.payload_id.to_string(),
         );
 
-        // not emitting flashblock if no_tx_pool in FCU or replaying, it's just syncing
+        // not emitting flashblock if no_tx_pool in FCU, it's just syncing
+        // For X Layer - skip if replaying
         if !ctx.attributes().no_tx_pool && !rebuild_external_payload {
             let flashblock_byte_size = self
                 .ws_pub
@@ -480,6 +482,7 @@ where
             );
         }
 
+        // For X Layer - resolve payload if replaying
         if ctx.attributes().no_tx_pool || rebuild_external_payload {
             info!(
                 target: "payload_builder",

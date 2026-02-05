@@ -382,30 +382,51 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
 
     /// Executes cached transactions received via P2P, used to replay previously sequenced flashblock
     /// transactions when the builder changes before the full block is built.
-    pub(super) fn execute_cached_flashblocks_transactions<E: Debug + Default>(
+    pub(super) fn execute_cached_flashblocks_transactions<E: Debug + Default + Clone>(
         &self,
         info: &mut ExecutionInfo<E>,
         db: &mut State<impl Database>,
         cached_txs: Vec<WithEncoded<alloy_consensus::transaction::Recovered<OpTransactionSigned>>>,
     ) -> Result<(), PayloadBuilderError> {
+        let tx_da_limit = self.da_config.max_da_tx_size();
+        let block_gas_limit = self.block_gas_limit();
+        let block_da_limit = self.da_config.max_da_block_size();
+        let block_da_footprint_limit = info.da_footprint_scalar.map(|_| self.block_gas_limit());
+
         info!(
             target: "payload_builder",
-            message = "Found cached transactions from P2P, replaying",
+            message = "Found cached flashblocks sequence transactions from p2p, replaying",
             parent_hash = ?self.parent_hash(),
             cached_tx_count = cached_txs.len(),
+            block_da_limit = ?block_da_limit,
+            tx_da_limit = ?tx_da_limit,
+            block_gas_limit = ?block_gas_limit,
         );
 
-        let mut cumulative_gas_used = info.cumulative_gas_used;
-        let mut cumulative_da_bytes_used = info.cumulative_da_bytes_used;
-        let mut total_fees = info.total_fees;
-        let mut receipts = Vec::with_capacity(cached_txs.len());
-        let mut executed_senders = Vec::with_capacity(cached_txs.len());
-        let mut executed_transactions = Vec::with_capacity(cached_txs.len());
         let mut evm = self.evm_config.evm_with_env(&mut *db, self.evm_env.clone());
         for with_encoded_tx in cached_txs {
             let (encoded_bytes, recovered_tx) = with_encoded_tx.split();
             let sender = recovered_tx.signer();
 
+            // ensure transaction is valid
+            let tx_da_size = op_alloy_flz::tx_estimated_size_fjord_bytes(encoded_bytes.as_ref());
+            if let Err(result) = info.is_tx_over_limits(
+                tx_da_size,
+                block_gas_limit,
+                tx_da_limit,
+                block_da_limit,
+                recovered_tx.gas_limit(),
+                info.da_footprint_scalar,
+                block_da_footprint_limit,
+            ) {
+                return Err(PayloadBuilderError::Other(
+                    eyre::eyre!(
+                        "invalid flashblocks sequence, tx {tx_hash} over block limits: {result}",
+                        tx_hash = recovered_tx.tx_hash(),
+                    )
+                    .into(),
+                ));
+            }
             if recovered_tx.is_eip4844() {
                 return Err(PayloadBuilderError::other(
                     OpPayloadBuilderError::BlobTransactionRejected,
@@ -413,10 +434,12 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
             }
             if recovered_tx.is_deposit() {
                 return Err(PayloadBuilderError::Other(
-                    eyre::eyre!("invalid payload sequence, deposit transaction rejected").into(),
+                    eyre::eyre!("invalid flashblocks sequence, deposit transaction rejected")
+                        .into(),
                 ));
             }
 
+            // Ensure transaction execution is valid
             let ResultAndState { result, state } = match evm.transact(&recovered_tx) {
                 Ok(res) => res,
                 Err(err) => {
@@ -432,10 +455,9 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
 
             // Add gas used by the transaction to cumulative gas used
             let gas_used = result.gas_used();
-            cumulative_gas_used += gas_used;
-            // record tx da size
-            cumulative_da_bytes_used +=
-                op_alloy_flz::tx_estimated_size_fjord_bytes(encoded_bytes.as_ref());
+            info.cumulative_gas_used += gas_used;
+            // Record tx da size
+            info.cumulative_da_bytes_used += tx_da_size;
 
             // Push transaction changeset and calculate header bloom filter for receipt.
             let ctx = ReceiptBuilderCtx {
@@ -443,9 +465,9 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
                 evm: &evm,
                 result,
                 state: &state,
-                cumulative_gas_used,
+                cumulative_gas_used: info.cumulative_gas_used,
             };
-            receipts.push(self.build_receipt(ctx, None));
+            info.receipts.push(self.build_receipt(ctx, None));
 
             // Commit changes
             evm.db_mut().commit(state);
@@ -454,20 +476,12 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
             let miner_fee = recovered_tx
                 .effective_tip_per_gas(self.base_fee())
                 .expect("fee is always valid; execution succeeded");
-            total_fees += U256::from(miner_fee) * U256::from(gas_used);
+            info.total_fees += U256::from(miner_fee) * U256::from(gas_used);
 
             // Append sender and transaction to the respective lists
-            executed_senders.push(sender);
-            executed_transactions.push(recovered_tx.into_inner());
+            info.executed_senders.push(sender);
+            info.executed_transactions.push(recovered_tx.into_inner());
         }
-
-        // Atomic update the execution info on successful replay
-        info.cumulative_gas_used = cumulative_gas_used;
-        info.cumulative_da_bytes_used = cumulative_da_bytes_used;
-        info.total_fees = total_fees;
-        info.receipts.extend(receipts);
-        info.executed_senders.extend(executed_senders);
-        info.executed_transactions.extend(executed_transactions);
 
         Ok(())
     }
@@ -475,7 +489,7 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
     /// Executes the given best transactions and updates the execution info.
     ///
     /// Returns `Ok(Some(())` if the job was cancelled.
-    pub(super) fn execute_best_transactions<E: Debug + Default>(
+    pub(super) fn execute_best_transactions<E: Debug + Default + Clone>(
         &self,
         info: &mut ExecutionInfo<E>,
         db: &mut State<impl Database>,
