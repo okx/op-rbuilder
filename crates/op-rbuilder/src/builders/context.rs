@@ -388,14 +388,6 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
         db: &mut State<impl Database>,
         cached_txs: Vec<WithEncoded<alloy_consensus::transaction::Recovered<OpTransactionSigned>>>,
     ) -> Result<(), PayloadBuilderError> {
-        if cached_txs.is_empty() {
-            // Flashblocks sequence built contains no transactions. We can continue build from fresh
-            // since no replaying required.
-            return Err(PayloadBuilderError::Other(
-                eyre::eyre!("cached sequence is empty").into(),
-            ));
-        }
-
         info!(
             target: "payload_builder",
             message = "Found cached transactions from P2P, replaying",

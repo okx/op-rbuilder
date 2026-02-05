@@ -417,6 +417,12 @@ where
             .p2p_cache
             .get_flashblocks_sequence_txs::<OpTransactionSigned>(ctx.parent().hash())
             .is_some_and(|cached_txs| {
+                if cached_txs.is_empty() {
+                    // Flashblocks sequence built contains no transactions. We can continue build from fresh
+                    // since no replaying required.
+                    return false;
+                }
+
                 ctx.execute_cached_flashblocks_transactions(&mut info, &mut state, cached_txs)
                     .inspect_err(|e| {
                         warn!(
@@ -427,7 +433,7 @@ where
                     .is_ok()
             });
 
-        // We add first builder tx right after deposits. Skip if rebuilding from external payload cache
+        // We add first builder tx right after deposits. Skip if replaying
         if !ctx.attributes().no_tx_pool
             && !rebuild_external_payload
             && let Err(e) =
@@ -457,8 +463,8 @@ where
             payload_id = fb_payload.payload_id.to_string(),
         );
 
-        // not emitting flashblock if no_tx_pool in FCU, it's just syncing
-        if !ctx.attributes().no_tx_pool {
+        // not emitting flashblock if no_tx_pool in FCU or replaying, it's just syncing
+        if !ctx.attributes().no_tx_pool && !rebuild_external_payload {
             let flashblock_byte_size = self
                 .ws_pub
                 .publish(&fb_payload)
