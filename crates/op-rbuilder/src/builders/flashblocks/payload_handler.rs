@@ -185,11 +185,11 @@ where
                             }));
                         }
                         Message::OpFlashblockPayload(fb_payload) => {
+                            if let Err(e) = p2p_cache.add_flashblock_payload(fb_payload.clone()) {
+                                warn!(target: "payload_builder", e = ?e, "failed to add flashblock txs to cache");
+                            }
                             if let Err(e) = ws_pub.publish(&fb_payload) {
                                 warn!(target: "payload_builder", e = ?e, "failed to publish flashblock to websocket publisher");
-                            }
-                            if let Err(e) = p2p_cache.add_flashblock_payload(fb_payload) {
-                                warn!(target: "payload_builder", e = ?e, "failed to add flashblock txs to cache");
                             }
                         }
                     }

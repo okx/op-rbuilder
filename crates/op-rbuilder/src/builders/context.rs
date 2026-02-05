@@ -382,7 +382,7 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
 
     /// Executes cached transactions received via P2P, used to replay previously sequenced flashblock
     /// transactions when the builder changes before the full block is built.
-    pub(super) fn execute_cached_flashblocks_transactions<E: Debug + Default + Clone>(
+    pub(super) fn execute_cached_flashblocks_transactions<E: Debug + Default>(
         &self,
         info: &mut ExecutionInfo<E>,
         db: &mut State<impl Database>,

@@ -30,7 +30,7 @@ impl FlashblockPayloadsCache {
             }
             _ => {
                 // New payload_id - replace entire cache. Base payload is the first payload of the sequence,
-                // and should not be nil.
+                // and should not be None.
                 let parent_hash = payload
                     .parent_hash()
                     .ok_or_else(|| eyre::eyre!("parent hash in flashblock payload not found"))?;
