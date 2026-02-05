@@ -1,16 +1,17 @@
+use parking_lot::Mutex;
 use std::sync::Arc;
 
 use alloy_consensus::transaction::Recovered;
 use alloy_eips::eip2718::WithEncoded;
 use alloy_primitives::B256;
 use op_alloy_rpc_types_engine::OpFlashblockPayload;
-use parking_lot::Mutex;
+use reth_payload_builder::PayloadId;
 use reth_primitives_traits::SignedTransaction;
 
-type FlashblockPayloadsSequence = Option<(B256, Vec<OpFlashblockPayload>)>;
+type FlashblockPayloadsSequence = Option<(PayloadId, B256, Vec<OpFlashblockPayload>)>;
 
 /// Cache for the current pending block's flashblock payloads sequence that is
-/// being built, based on the `parent_hash`.
+/// being built, based on the `payload_id`.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct FlashblockPayloadsCache {
     inner: Arc<Mutex<FlashblockPayloadsSequence>>,
@@ -22,18 +23,19 @@ impl FlashblockPayloadsCache {
     }
 
     pub(crate) fn add_flashblock_payload(&self, payload: OpFlashblockPayload) -> eyre::Result<()> {
-        let parent_hash = payload
-            .parent_hash()
-            .ok_or_else(|| eyre::eyre!("parent hash in flashblock payload not found"))?;
-
         let mut guard = self.inner.lock();
         match guard.as_mut() {
-            Some((curr_parent_hash, payloads)) if *curr_parent_hash == parent_hash => {
+            Some((curr_payload_id, _, payloads)) if *curr_payload_id == payload.payload_id => {
                 payloads.push(payload);
             }
             _ => {
-                // New parent hash - replace entire cache
-                *guard = Some((parent_hash, vec![payload]));
+                // New payload_id - replace entire cache. Base payload is the first payload of the sequence,
+                // and should not be nil.
+                let parent_hash = payload
+                    .parent_hash()
+                    .ok_or_else(|| eyre::eyre!("parent hash in flashblock payload not found"))?;
+
+                *guard = Some((payload.payload_id, parent_hash, vec![payload]));
             }
         }
         Ok(())
@@ -51,7 +53,7 @@ impl FlashblockPayloadsCache {
     ) -> Option<Vec<WithEncoded<Recovered<T>>>> {
         let mut payloads = {
             let guard = self.inner.lock();
-            let (curr_parent_hash, payloads) = guard.as_ref()?;
+            let (_, curr_parent_hash, payloads) = guard.as_ref()?;
             if *curr_parent_hash != parent_hash {
                 return None;
             }
