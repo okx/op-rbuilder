@@ -412,6 +412,8 @@ where
         ctx.metrics.sequencer_tx_duration.record(sequencer_tx_time);
         ctx.metrics.sequencer_tx_gauge.set(sequencer_tx_time);
 
+        info!("DEBUG: latest commit version is 1a63a6a1a2b0d56ce8e19bd493f37729d61834cb");
+
         // Check if need to rebuild from external p2p payload cache
         let rebuild_external_payload = self
             .p2p_cache
