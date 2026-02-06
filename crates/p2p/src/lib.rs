@@ -19,7 +19,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 pub use libp2p::{Multiaddr, StreamProtocol};
 
