@@ -8,7 +8,7 @@ use op_alloy_rpc_types_engine::OpFlashblockPayload;
 use reth_payload_builder::PayloadId;
 use reth_primitives_traits::SignedTransaction;
 
-type FlashblockPayloadsSequence = Option<(PayloadId, B256, Vec<OpFlashblockPayload>)>;
+type FlashblockPayloadsSequence = Option<(PayloadId, Option<B256>, Vec<OpFlashblockPayload>)>;
 
 /// Cache for the current pending block's flashblock payloads sequence that is
 /// being built, based on the `payload_id`.
@@ -25,17 +25,19 @@ impl FlashblockPayloadsCache {
     pub(crate) fn add_flashblock_payload(&self, payload: OpFlashblockPayload) -> eyre::Result<()> {
         let mut guard = self.inner.lock();
         match guard.as_mut() {
-            Some((curr_payload_id, _, payloads)) if *curr_payload_id == payload.payload_id => {
+            Some((curr_payload_id, parent_hash, payloads))
+                if *curr_payload_id == payload.payload_id =>
+            {
+                if parent_hash.is_none()
+                    && let Some(hash) = payload.parent_hash()
+                {
+                    *parent_hash = Some(hash);
+                }
                 payloads.push(payload);
             }
             _ => {
-                // New payload_id - replace entire cache. Base payload is the first payload of the sequence,
-                // and should not be None.
-                let parent_hash = payload
-                    .parent_hash()
-                    .ok_or_else(|| eyre::eyre!("parent hash in flashblock payload not found"))?;
-
-                *guard = Some((payload.payload_id, parent_hash, vec![payload]));
+                // New payload_id - replace entire cache
+                *guard = Some((payload.payload_id, payload.parent_hash(), vec![payload]));
             }
         }
         Ok(())
@@ -54,7 +56,7 @@ impl FlashblockPayloadsCache {
         let mut payloads = {
             let mut guard = self.inner.lock();
             let (_, curr_parent_hash, _) = guard.as_ref()?;
-            if *curr_parent_hash != parent_hash {
+            if *curr_parent_hash != Some(parent_hash) {
                 return None;
             }
             // Take ownership and flush the cache
