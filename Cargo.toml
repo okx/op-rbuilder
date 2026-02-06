@@ -213,7 +213,7 @@ vergen-git2 = "9.0.4"
 opentelemetry = { version = "0.31", features = ["trace"] }
 
 # For X layer
-xlayer-trace-monitor = { git = "https://github.com/okx/xlayer-toolkit", rev = "0004d202181bb772821797cd54983e29f32cae07" }
+xlayer-trace-monitor = { git = "https://github.com/okx/xlayer-toolkit", rev = "d6af8edac7cf179241af1688f7741e260ba48b79" }
 
 [patch."https://github.com/paradigmxyz/reth"]
 reth = { git = "https://github.com/okx/reth", rev = "b6a31f31af91abdecb475f2a991906bff9bbef7f" }

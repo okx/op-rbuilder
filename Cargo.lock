@@ -3202,7 +3202,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.114",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -14817,8 +14817,9 @@ dependencies = [
 [[package]]
 name = "xlayer-trace-monitor"
 version = "0.1.0"
-source = "git+https://github.com/okx/xlayer-toolkit?rev=0004d202181bb772821797cd54983e29f32cae07#0004d202181bb772821797cd54983e29f32cae07"
+source = "git+https://github.com/okx/xlayer-toolkit?rev=d6af8edac7cf179241af1688f7741e260ba48b79#d6af8edac7cf179241af1688f7741e260ba48b79"
 dependencies = [
+ "crossbeam-channel",
  "hex",
  "tracing",
 ]
