@@ -192,7 +192,7 @@ impl<M: Message + 'static> Node<M> {
                         } => {
                             // when a new connection is established, open outbound streams for each protocol
                             // and add them to the outgoing streams handler.
-                            info!(target: "flashblocks-p2p", "fb p2p connection established with peer {peer_id}");
+                            debug!(target: "flashblocks-p2p", "fb p2p connection established with peer {peer_id}");
                             if !outgoing_streams_handler.has_peer(&peer_id) {
                                 for protocol in &protocols {
                                         match swarm

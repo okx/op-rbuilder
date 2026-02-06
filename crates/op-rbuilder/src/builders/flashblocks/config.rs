@@ -81,7 +81,7 @@ pub struct FlashblocksConfig {
     pub p2p_process_full_payload: bool,
 
     /// Maximum number of concurrent WebSocket subscribers
-    pub ws_subscriber_limit: u16,
+    pub ws_subscriber_limit: Option<u16>,
 }
 
 impl Default for FlashblocksConfig {
@@ -106,7 +106,7 @@ impl Default for FlashblocksConfig {
             p2p_max_peer_count: 50,
             p2p_send_full_payload: false,
             p2p_process_full_payload: false,
-            ws_subscriber_limit: 256,
+            ws_subscriber_limit: None,
         }
     }
 }
