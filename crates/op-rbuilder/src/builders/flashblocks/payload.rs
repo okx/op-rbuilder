@@ -897,14 +897,14 @@ where
                 if !ctx.extra_ctx.disable_rollup_boost && block_cancel.is_cancelled() {
                     return Ok(None);
                 }
+                self.built_fb_payload_tx
+                    .try_send(fb_payload.clone())
+                    .wrap_err("failed to send built payload to handler")?;
+                *best_payload = (new_payload, bundle_state);
                 let flashblock_byte_size = self
                     .ws_pub
                     .publish(&fb_payload)
                     .wrap_err("failed to publish flashblock via websocket")?;
-                self.built_fb_payload_tx
-                    .try_send(fb_payload)
-                    .wrap_err("failed to send built payload to handler")?;
-                *best_payload = (new_payload, bundle_state);
 
                 // Record flashblock build duration
                 ctx.metrics
