@@ -91,6 +91,16 @@ impl WebSocketPublisher {
             .map_err(|e| io::Error::new(io::ErrorKind::ConnectionAborted, e))?;
         Ok(size)
     }
+
+    /// Publish a pre-serialized flashblock payload to all WebSocket subscribers.
+    pub fn publish_preserialized(&self, serialized: String) -> io::Result<usize> {
+        let utf8_bytes = Utf8Bytes::from(serialized);
+        let size = utf8_bytes.len();
+        self.pipe
+            .send(utf8_bytes)
+            .map_err(|e| io::Error::new(io::ErrorKind::ConnectionAborted, e))?;
+        Ok(size)
+    }
 }
 
 impl Drop for WebSocketPublisher {
