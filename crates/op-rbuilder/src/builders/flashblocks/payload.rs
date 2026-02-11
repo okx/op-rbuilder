@@ -419,6 +419,12 @@ where
             .get_flashblocks_sequence_txs::<OpTransactionSigned>(ctx.parent().hash())
             .filter(|cached_txs| !cached_txs.is_empty())
             .map(|cached_txs| {
+                info!(
+                    target: "payload_builder",
+                    parent_hash = ?ctx.parent().hash(),
+                    cached_tx_count = cached_txs.len(),
+                    "[DEBUG] p2p cache hit, replaying cached flashblocks transactions"
+                );
                 // The execution result is discarded here since even on replay errors, we will resolve the
                 // payload till whichever point the replay failed.
                 let _ = ctx
@@ -431,6 +437,9 @@ where
                     });
             })
             .is_some();
+        if !rebuild_external_payload {
+            info!(target: "payload_builder", parent_hash = ?ctx.parent().hash(), "[DEBUG] p2p cache miss or empty, building fresh block");
+        }
 
         // We add first builder tx right after deposits
         // For X Layer - skip if replaying

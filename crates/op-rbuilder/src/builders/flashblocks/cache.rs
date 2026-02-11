@@ -55,8 +55,27 @@ impl FlashblockPayloadsCache {
     ) -> Option<Vec<WithEncoded<Recovered<T>>>> {
         let mut payloads = {
             let mut guard = self.inner.lock();
-            let (_, curr_parent_hash, _) = guard.as_ref()?;
+            let cache_ref = match guard.as_ref() {
+                Some(r) => r,
+                None => {
+                    tracing::info!(
+                        target: "payload_builder",
+                        ?parent_hash,
+                        "[DEBUG] p2p flashblocks cache is empty, no payloads to replay"
+                    );
+                    return None;
+                }
+            };
+            let (cached_payload_id, curr_parent_hash, cached_payloads) = cache_ref;
             if *curr_parent_hash != Some(parent_hash) {
+                tracing::info!(
+                    target: "payload_builder",
+                    ?parent_hash,
+                    ?curr_parent_hash,
+                    ?cached_payload_id,
+                    cached_payload_count = cached_payloads.len(),
+                    "[DEBUG] p2p flashblocks cache parent hash mismatch"
+                );
                 return None;
             }
             // Take ownership and flush the cache
@@ -66,25 +85,49 @@ impl FlashblockPayloadsCache {
 
         payloads.sort_by_key(|p| p.index);
 
+        let payload_count = payloads.len();
+        let indices: Vec<u64> = payloads.iter().map(|p| p.index).collect();
+        tracing::info!(
+            target: "payload_builder",
+            ?parent_hash,
+            payload_count,
+            ?indices,
+            "[DEBUG] p2p flashblocks cache hit, attempting transaction recovery"
+        );
+
         // Skip base payload index 0 (sequencer transactions)
         payloads.iter().skip(1).enumerate().try_fold(
             Vec::with_capacity(payloads.len()),
             |mut acc, (expected_index, payload)| {
                 if payload.index != expected_index as u64 + 1 {
                     tracing::warn!(
+                        target: "payload_builder",
                         expected = expected_index + 1,
                         got = payload.index,
-                        "flashblock payloads have missing or out-of-order indexes"
+                        ?parent_hash,
+                        "[DEBUG] flashblock payloads have missing or out-of-order indexes"
                     );
                     return None;
                 }
-                acc.extend(
-                    payload
-                        .recover_transactions()
-                        .collect::<Result<Vec<_>, _>>()
-                        .ok()?,
-                );
-                Some(acc)
+                match payload
+                    .recover_transactions()
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(txs) => {
+                        acc.extend(txs);
+                        Some(acc)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "payload_builder",
+                            index = payload.index,
+                            ?parent_hash,
+                            error = %e,
+                            "[DEBUG] failed to recover transactions from cached flashblock payload"
+                        );
+                        None
+                    }
+                }
             },
         )
     }
