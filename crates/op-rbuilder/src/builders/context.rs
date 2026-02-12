@@ -49,7 +49,7 @@ use crate::{
 use alloy_eips::eip2718::WithEncoded;
 
 /// Container type that holds all necessities to build a new payload.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct OpPayloadBuilderCtx<ExtraCtx: Debug + Default = ()> {
     /// The type that knows how to perform system calls and configure the evm.
     pub evm_config: OpEvmConfig,

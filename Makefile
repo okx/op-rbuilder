@@ -121,6 +121,3 @@ bench-prettify: ## Prettifies the latest Criterion report
 xlayer:
 	cp .github/scripts/pre-commit-xlayer .git/hooks/pre-commit && \
 	chmod +x .git/hooks/pre-commit
-
-build-docker:
-	docker build -t op-rbuilder:latest -f Dockerfile.xlayer .
