@@ -511,10 +511,11 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
 
         debug!(
             target: "payload_builder",
-            message = "Executing best transactions",
+            id = ?self.payload_id(),
             block_da_limit = ?block_da_limit,
             tx_da_limit = ?tx_da_limit,
             block_gas_limit = ?block_gas_limit,
+            "Executing best transactions",
         );
 
         let block_attr = BlockConditionalAttributes {
@@ -532,10 +533,11 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
             let log_txn = |result: TxnExecutionResult| {
                 debug!(
                     target: "payload_builder",
-                    message = "Considering transaction",
+                    id = ?self.payload_id(),
                     tx_hash = ?tx_hash,
                     tx_da_size = ?tx_da_size,
                     result = %result,
+                    "Considering transaction",
                 );
             };
 
@@ -698,10 +700,11 @@ impl<ExtraCtx: Debug + Default> OpPayloadBuilderCtx<ExtraCtx> {
 
         debug!(
             target: "payload_builder",
-            message = "Completed executing best transactions",
+            id = ?self.payload_id(),
             txs_executed = num_txs_considered,
             txs_applied = num_txs_simulated_success,
             txs_rejected = num_txs_simulated_fail,
+            "Completed executing best transactions",
         );
         Ok(None)
     }
