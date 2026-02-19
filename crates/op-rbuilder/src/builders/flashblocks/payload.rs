@@ -442,7 +442,7 @@ where
 
         info!(
             target: "payload_builder",
-            id = fb_payload.payload_id.to_string(),
+            id = %fb_payload.payload_id,
             "Fallback block built"
         );
 
@@ -496,7 +496,7 @@ where
             FlashblockScheduler::new(&self.config.specific, self.config.block_time, timestamp);
         info!(
             target: "payload_builder",
-            payload_id = ?fb_payload.payload_id,
+            id = %fb_payload.payload_id,
             schedule = ?flashblock_scheduler,
             "Computed flashblock timing schedule"
         );
@@ -575,7 +575,7 @@ where
             if let Ok(new_fb_cancel) = rx.recv() {
                 debug!(
                     target: "payload_builder",
-                    id = ?fb_payload.payload_id,
+                    id = %fb_payload.payload_id,
                     flashblock_index = ctx.flashblock_index(),
                     block_number = ctx.block_number(),
                     "Received signal to build flashblock",
@@ -623,10 +623,11 @@ where
                 Err(err) => {
                     error!(
                         target: "payload_builder",
-                        "Failed to build flashblock {} for block number {}: {}",
-                        ctx.flashblock_index(),
-                        ctx.block_number(),
-                        err
+                        id = %fb_payload.payload_id,
+                        flashblock_index = ctx.flashblock_index(),
+                        block_number = ctx.block_number(),
+                        ?err,
+                        "Failed to build flashblock",
                     );
                     self.resolve_best_payload(
                         &ctx,
@@ -954,9 +955,10 @@ where
         info!(
             target: "payload_builder",
             event = "build_complete",
-            id = ?ctx.payload_id(),
+            id = %ctx.payload_id(),
             flashblocks_per_block = flashblocks_per_block,
             flashblock_index = ctx.flashblock_index(),
+            "Flashblocks building complete"
         );
 
         span.record("flashblock_count", ctx.flashblock_index());
@@ -1195,14 +1197,14 @@ where
     };
     debug!(
         target: "payload_builder",
-        id = ?ctx.payload_id(),
+        id = %ctx.payload_id(),
         "Executed block created"
     );
 
     let sealed_block = Arc::new(block.seal_slow());
     debug!(
         target: "payload_builder",
-        id = ?ctx.payload_id(),
+        id = %ctx.payload_id(),
         ?sealed_block,
         "Sealed built block"
     );
