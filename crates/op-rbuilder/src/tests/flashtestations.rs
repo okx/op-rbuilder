@@ -469,11 +469,13 @@ async fn test_flashtestations_permit_with_flashblocks_number_permit(
     let nonce = provider.get_transaction_count(TEE_DEBUG_ADDRESS).await?;
     assert_eq!(nonce, 0);
     // Verify flashblock number incremented correctly
+    // 3 from first block (add_builder_tx authorizes TEE in fb1, so fb2-4 call the contract)
+    // + 4 from second block (all non-fallback flashblocks call the contract) = 7
     let contract = FlashblocksNumber::new(FLASHBLOCKS_NUMBER_ADDRESS, provider.clone());
     let current_number = contract.getFlashblockNumber().call().await?;
     assert_eq!(
         current_number,
-        U256::from(4),
+        U256::from(7),
         "Flashblock number not incremented correctly"
     );
     Ok(())
