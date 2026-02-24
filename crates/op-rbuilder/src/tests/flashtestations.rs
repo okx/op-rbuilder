@@ -155,6 +155,8 @@ async fn test_flashtestations_with_number_contract(rbuilder: LocalInstance) -> e
         .await?;
     let block = driver.build_new_block_with_current_timestamp(None).await?;
     // 1 deposit tx, 1 fallback builder tx, 4 flashblocks number tx, valid tx, block proof
+
+    // check regular tx
     assert!(block.includes(tx.tx_hash()));
     let txs = block.transactions.into_transactions_vec();
     assert_eq!(txs.len(), 8, "Expected 8 transactions in block");
@@ -166,7 +168,7 @@ async fn test_flashtestations_with_number_contract(rbuilder: LocalInstance) -> e
     );
     // flashblocks number contract
     let mut number_contract_count = 0;
-    for t in &txs {
+    for t in txs.iter() {
         if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
             number_contract_count += 1;
         }
@@ -177,7 +179,7 @@ async fn test_flashtestations_with_number_contract(rbuilder: LocalInstance) -> e
     );
     // check block proof tx
     let mut block_proof_count = 0;
-    for t in &txs {
+    for t in txs.iter() {
         if t.to() == Some(BLOCK_BUILDER_POLICY_ADDRESS) {
             block_proof_count += 1;
         }
@@ -324,7 +326,7 @@ async fn test_flashtestations_permit_with_flashblocks_number_contract(
     );
     // flashblocks number contract
     let mut number_contract_count = 0;
-    for t in &txs {
+    for t in txs.iter() {
         if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
             number_contract_count += 1;
         }
@@ -335,7 +337,7 @@ async fn test_flashtestations_permit_with_flashblocks_number_contract(
     );
     // block proof tx
     let mut block_proof_count = 0;
-    for t in &txs {
+    for t in txs.iter() {
         if t.to() == Some(BLOCK_BUILDER_POLICY_ADDRESS) {
             block_proof_count += 1;
         }
@@ -414,7 +416,7 @@ async fn test_flashtestations_permit_with_flashblocks_number_permit(
     // route to the number contract
     let mut regular_builder_count = 0;
     let mut number_contract_count = 0;
-    for t in &txs {
+    for t in txs.iter() {
         if t.to() == Some(Address::ZERO) {
             regular_builder_count += 1;
         }
@@ -433,7 +435,7 @@ async fn test_flashtestations_permit_with_flashblocks_number_permit(
     );
     // block proof tx
     let mut block_proof_count = 0;
-    for t in &txs {
+    for t in txs.iter() {
         if t.to() == Some(BLOCK_BUILDER_POLICY_ADDRESS) {
             block_proof_count += 1;
         }
@@ -454,7 +456,7 @@ async fn test_flashtestations_permit_with_flashblocks_number_permit(
     assert_eq!(txs.len(), 8, "Expected 8 transactions in block");
     // flashblocks number contract
     let mut number_contract_count = 0;
-    for t in &txs {
+    for t in txs.iter() {
         if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
             number_contract_count += 1;
         }

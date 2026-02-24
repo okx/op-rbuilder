@@ -101,11 +101,13 @@ async fn test_flashblocks_number_contract_builder_tx(rbuilder: LocalInstance) ->
 
     // Verify first block structure
     assert_eq!(block.transactions.len(), 10);
-    let txs = block.clone().transactions.into_transactions_vec();
-
+    let txs = block
+        .transactions
+        .as_transactions()
+        .expect("transactions not in block");
     // Verify builder txs (should be regular since builder tx is not registered yet)
     let mut builder_tx_count = 0;
-    for tx in &txs {
+    for tx in txs.iter() {
         if tx.to() == Some(Address::ZERO) {
             builder_tx_count += 1;
         }
@@ -141,8 +143,10 @@ async fn test_flashblocks_number_contract_builder_tx(rbuilder: LocalInstance) ->
     let block = driver.build_new_block_with_current_timestamp(None).await?;
     assert_eq!(block.transactions.len(), 10);
     assert!(block.includes(&user_transactions));
-    let txs = block.transactions.into_transactions_vec();
-
+    let txs = block
+        .transactions
+        .as_transactions()
+        .expect("transactions not in block");
     // Fallback block should have regular builder tx after deposit tx
     assert_eq!(
         txs[1].to(),
@@ -153,7 +157,7 @@ async fn test_flashblocks_number_contract_builder_tx(rbuilder: LocalInstance) ->
     // Other builder txs should call the contract
     // Verify builder txs
     let mut contract_tx_count = 0;
-    for tx in &txs {
+    for tx in txs.iter() {
         if tx.to() == Some(contract_address) {
             contract_tx_count += 1;
         }
