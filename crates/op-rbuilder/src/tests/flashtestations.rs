@@ -408,18 +408,28 @@ async fn test_flashtestations_permit_with_flashblocks_number_permit(
     // add builder tx
     assert!(block.includes(add_builder_tx.tx_hash()));
     let txs = block.transactions.into_transactions_vec();
-    // 1 deposit tx, 5 regular builder tx, 1 add builder tx, 1 block proof tx
+    // 1 deposit tx, 2 regular builder tx, 3 number contract builder tx, 1 add builder tx, 1 block proof tx
     assert_eq!(num_txs, 8, "Expected 8 transactions in block");
-    // Check no transactions to the flashblocks number contract as tee signer is not authorized
+    // After add_builder_tx executes in flashblock 1, TEE is authorized and remaining builder txs
+    // route to the number contract
     let mut regular_builder_count = 0;
+    let mut number_contract_count = 0;
     for t in &txs {
         if t.to() == Some(Address::ZERO) {
             regular_builder_count += 1;
         }
+        if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
+            number_contract_count += 1;
+        }
     }
     assert_eq!(
-        regular_builder_count, 5,
-        "Should have 5 regular builder txs"
+        regular_builder_count, 2,
+        "Should have 2 regular builder txs"
+    );
+    // 3 number contract builder txs + 1 add_builder_tx (also targets number contract)
+    assert_eq!(
+        number_contract_count, 4,
+        "Should have 4 txs to number contract"
     );
     // block proof tx
     let mut block_proof_count = 0;
