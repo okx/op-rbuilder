@@ -9,8 +9,8 @@ use crate::{
     args::{FlashblocksArgs, OpRbuilderArgs},
     flashtestations::args::FlashtestationsArgs,
     tests::{
-        BLOCK_BUILDER_POLICY_ADDRESS, BundleOpts, ChainDriver, ChainDriverExt,
-        FLASHBLOCKS_NUMBER_ADDRESS, FLASHTESTATION_REGISTRY_ADDRESS, LocalInstance,
+        BLOCK_BUILDER_POLICY_ADDRESS, BlockTransactionsExt, BundleOpts, ChainDriver,
+        ChainDriverExt, FLASHBLOCKS_NUMBER_ADDRESS, FLASHTESTATION_REGISTRY_ADDRESS, LocalInstance,
         MOCK_DCAP_ADDRESS, TEE_DEBUG_ADDRESS, TransactionBuilderExt,
         block_builder_policy::BlockBuilderPolicy, builder_signer,
         flashblocks_number_contract::FlashblocksNumber,

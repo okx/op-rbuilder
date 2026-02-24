@@ -6,7 +6,7 @@ use crate::{
     args::OpRbuilderArgs,
     primitives::bundle::MAX_BLOCK_RANGE_BLOCKS,
     tests::{
-        BlockTransactionsExt, BuilderTxValidation, BundleOpts, ChainDriver, ChainDriverExt,
+        BlockTransactionsExt, BuilderTxValidation, BundleOpts, ChainDriver,
         LocalInstance, TransactionBuilderExt,
     },
 };
