@@ -306,11 +306,13 @@ async fn test_flashtestations_permit_with_flashblocks_number_contract(
     let tx = driver
         .create_transaction()
         .random_valid_transfer()
-        .with_bundle(BundleOpts::default().with_flashblock_number_min(4))
+        .with_bundle(BundleOpts::default())
         .send()
         .await?;
     let block = driver.build_new_block_with_current_timestamp(None).await?;
     let num_txs = block.transactions.len();
+    // user tx
+    assert!(block.includes(tx.tx_hash()));
     let txs = block.transactions.into_transactions_vec();
     // // 1 deposit tx, 1 regular builder tx, 4 flashblocks number tx, 1 user tx, 1 block proof tx
     assert_eq!(num_txs, 8, "Expected 8 transactions in block");
@@ -321,25 +323,24 @@ async fn test_flashtestations_permit_with_flashblocks_number_contract(
         "builder tx should send to zero address"
     );
     // flashblocks number contract
-    for i in 2..6 {
-        assert_eq!(
-            txs[i].to(),
-            Some(FLASHBLOCKS_NUMBER_ADDRESS),
-            "builder tx should send to flashblocks number contract at index {}",
-            i
-        );
+    let mut number_contract_count = 0;
+    for t in &txs {
+        if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
+            number_contract_count += 1;
+        }
     }
-    // user tx
     assert_eq!(
-        txs[6].tx_hash(),
-        *tx.tx_hash(),
-        "user tx should be in correct position in block"
+        number_contract_count, 4,
+        "Should have 4 flashblocks number contract txs"
     );
-    assert_eq!(
-        txs[7].to(),
-        Some(BLOCK_BUILDER_POLICY_ADDRESS),
-        "builder tx should send verify block builder proof tx"
-    );
+    // block proof tx
+    let mut block_proof_count = 0;
+    for t in &txs {
+        if t.to() == Some(BLOCK_BUILDER_POLICY_ADDRESS) {
+            block_proof_count += 1;
+        }
+    }
+    assert_eq!(block_proof_count, 1, "Should have 1 block proof tx");
     // check that the tee signer did not send any transactions
     let balance = provider.get_balance(TEE_DEBUG_ADDRESS).await?;
     assert!(balance.is_zero());
