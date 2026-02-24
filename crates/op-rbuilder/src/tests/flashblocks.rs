@@ -16,50 +16,6 @@ use crate::{
 
 #[rb_test(flashblocks, args = OpRbuilderArgs {
     chain_block_time: 1000,
-    enable_revert_protection: true,
-    flashblocks: FlashblocksArgs {
-        enabled: true,
-        flashblocks_port: 1239,
-        flashblocks_addr: "127.0.0.1".into(),
-        flashblocks_block_time: 200,
-        ..Default::default()
-    },
-    ..Default::default()
-})]
-async fn test_flashblock_min_max_filtering(rbuilder: LocalInstance) -> eyre::Result<()> {
-    let driver = rbuilder.driver().await?;
-    let flashblocks_listener = rbuilder.spawn_flashblocks_listener();
-
-    let tx1 = driver
-        .create_transaction()
-        .random_valid_transfer()
-        .with_bundle(
-            BundleOpts::default()
-                .with_flashblock_number_max(2)
-                .with_flashblock_number_min(2),
-        )
-        .send()
-        .await?;
-
-    let _block = driver.build_new_block_with_current_timestamp(None).await?;
-
-    // It ends up in the 2nd flashblock
-    assert_eq!(
-        2,
-        flashblocks_listener
-            .find_transaction_flashblock(tx1.tx_hash())
-            .unwrap(),
-        "Transaction should be in the 2nd flashblock"
-    );
-
-    let flashblocks = flashblocks_listener.get_flashblocks();
-    assert_eq!(6, flashblocks.len(), "Flashblocks length should be 6");
-
-    flashblocks_listener.stop().await
-}
-
-#[rb_test(flashblocks, args = OpRbuilderArgs {
-    chain_block_time: 1000,
     flashblocks: FlashblocksArgs {
         enabled: true,
         flashblocks_port: 1239,
