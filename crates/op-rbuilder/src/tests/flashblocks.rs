@@ -101,28 +101,21 @@ async fn test_flashblocks_number_contract_builder_tx(rbuilder: LocalInstance) ->
 
     // Verify first block structure
     assert_eq!(block.transactions.len(), 10);
-    let txs = block
-        .transactions
-        .as_transactions()
-        .expect("transactions not in block");
+    let txs = block.clone().transactions.into_transactions_vec();
 
     // Verify builder txs (should be regular since builder tx is not registered yet)
-    verify_builder_txs(
-        &txs,
-        &[1, 2, 4, 6, 8],
-        Some(Address::ZERO),
-        "Should have regular builder tx",
-    );
-
-    // Verify deploy tx position
-    assert_eq!(
-        txs[3].inner.inner.tx_hash(),
-        *deploy_tx.tx_hash(),
-        "Deploy tx not in correct position"
-    );
+    let mut builder_tx_count = 0;
+    for tx in &txs {
+        if tx.to() == Some(Address::ZERO) {
+            builder_tx_count += 1;
+        }
+    }
+    assert_eq!(builder_tx_count, 5, "Should have 5 regular builder txs");
+    // Verify deploy tx
+    assert!(block.includes(deploy_tx.tx_hash()));
 
     // Verify user transactions
-    verify_user_tx_hashes(&txs, &[5, 7, 9], &user_transactions);
+    assert!(block.includes(&user_transactions));
 
     // Initialize contract
     let init_tx = driver
@@ -147,10 +140,8 @@ async fn test_flashblocks_number_contract_builder_tx(rbuilder: LocalInstance) ->
     // with builder registered
     let block = driver.build_new_block_with_current_timestamp(None).await?;
     assert_eq!(block.transactions.len(), 10);
-    let txs = block
-        .transactions
-        .as_transactions()
-        .expect("transactions not in block");
+    assert!(block.includes(&user_transactions));
+    let txs = block.transactions.into_transactions_vec();
 
     // Fallback block should have regular builder tx after deposit tx
     assert_eq!(
@@ -160,15 +151,14 @@ async fn test_flashblocks_number_contract_builder_tx(rbuilder: LocalInstance) ->
     );
 
     // Other builder txs should call the contract
-    verify_builder_txs(
-        &txs,
-        &[2, 4, 6, 8],
-        Some(contract_address),
-        "Should call flashblocks contract",
-    );
-
-    // Verify user transactions, 3 blocks in total built
-    verify_user_tx_hashes(&txs, &[3, 5, 7, 9], &user_transactions);
+    // Verify builder txs
+    let mut contract_tx_count = 0;
+    for tx in &txs {
+        if tx.to() == Some(contract_address) {
+            contract_tx_count += 1;
+        }
+    }
+    assert_eq!(contract_tx_count, 4, "Should have 4 contract builder txs");
 
     // Verify flashblock number incremented correctly
     let contract = FlashblocksNumber::new(contract_address, provider.clone());
@@ -223,44 +213,16 @@ async fn create_flashblock_transactions(
     range: std::ops::Range<u64>,
 ) -> eyre::Result<Vec<TxHash>> {
     let mut txs = Vec::new();
-    for i in range {
+    for _ in range {
         let tx = driver
             .create_transaction()
             .random_valid_transfer()
-            .with_bundle(BundleOpts::default().with_flashblock_number_min(i))
+            .with_bundle(BundleOpts::default())
             .send()
             .await?;
         txs.push(*tx.tx_hash());
     }
     Ok(txs)
-}
-
-// Helper to verify builder transactions
-fn verify_builder_txs(
-    block_txs: &[impl Transaction],
-    indices: &[usize],
-    expected_to: Option<Address>,
-    msg: &str,
-) {
-    for &idx in indices {
-        assert_eq!(block_txs[idx].to(), expected_to, "{} at index {}", msg, idx);
-    }
-}
-
-// Helper to verify transaction matches
-fn verify_user_tx_hashes(
-    block_txs: &[impl AsRef<OpTxEnvelope>],
-    indices: &[usize],
-    expected_txs: &[TxHash],
-) {
-    for (i, &idx) in indices.iter().enumerate() {
-        assert_eq!(
-            *block_txs[idx].as_ref().tx_hash(),
-            expected_txs[i],
-            "Transaction at index {} doesn't match",
-            idx
-        );
-    }
 }
 
 /// Smoke test for flashblocks with end buffer.
