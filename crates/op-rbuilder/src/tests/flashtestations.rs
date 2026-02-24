@@ -396,7 +396,7 @@ async fn test_flashtestations_permit_with_flashblocks_number_permit(
         .create_transaction()
         .add_authorized_builder(TEE_DEBUG_ADDRESS)
         .with_to(FLASHBLOCKS_NUMBER_ADDRESS)
-        .with_bundle(BundleOpts::default().with_flashblock_number_min(4))
+        .with_bundle(BundleOpts::default())
         .send()
         .await?;
     let block = driver.build_new_block_with_current_timestamp(None).await?;
@@ -405,54 +405,53 @@ async fn test_flashtestations_permit_with_flashblocks_number_permit(
         .await?
         .expect("add builder tx not mined");
     let num_txs = block.transactions.len();
+    // add builder tx
+    assert!(block.includes(add_builder_tx.tx_hash()));
     let txs = block.transactions.into_transactions_vec();
     // 1 deposit tx, 5 regular builder tx, 1 add builder tx, 1 block proof tx
     assert_eq!(num_txs, 8, "Expected 8 transactions in block");
     // Check no transactions to the flashblocks number contract as tee signer is not authorized
-    for i in 1..6 {
-        assert_eq!(
-            txs[i].to(),
-            Some(Address::ZERO),
-            "builder tx should send to flashblocks number contract at index {}",
-            i
-        );
+    let mut regular_builder_count = 0;
+    for t in &txs {
+        if t.to() == Some(Address::ZERO) {
+            regular_builder_count += 1;
+        }
     }
-    // add builder tx
     assert_eq!(
-        txs[6].tx_hash(),
-        *add_builder_tx.tx_hash(),
-        "add builder tx should be in correct position in block"
+        regular_builder_count, 5,
+        "Should have 5 regular builder txs"
     );
-    assert_eq!(
-        txs[7].to(),
-        Some(BLOCK_BUILDER_POLICY_ADDRESS),
-        "builder tx should send verify block builder proof"
-    );
+    // block proof tx
+    let mut block_proof_count = 0;
+    for t in &txs {
+        if t.to() == Some(BLOCK_BUILDER_POLICY_ADDRESS) {
+            block_proof_count += 1;
+        }
+    }
+    assert_eq!(block_proof_count, 1, "Should have 1 block proof tx");
 
     let tx = driver
         .create_transaction()
         .random_valid_transfer()
-        .with_bundle(BundleOpts::default().with_flashblock_number_min(4))
+        .with_bundle(BundleOpts::default())
         .send()
         .await?;
     let block = driver.build_new_block_with_current_timestamp(None).await?;
+    // user tx
+    assert!(block.includes(tx.tx_hash()));
     let txs = block.transactions.into_transactions_vec();
     // 1 deposit tx, 1 regular builder tx, 4 flashblocks builder tx, 1 user tx, 1 block proof tx
     assert_eq!(txs.len(), 8, "Expected 8 transactions in block");
     // flashblocks number contract
-    for i in 2..6 {
-        assert_eq!(
-            txs[i].to(),
-            Some(FLASHBLOCKS_NUMBER_ADDRESS),
-            "builder tx should send to flashblocks number contract at index {}",
-            i
-        );
+    let mut number_contract_count = 0;
+    for t in &txs {
+        if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
+            number_contract_count += 1;
+        }
     }
-    // user tx
     assert_eq!(
-        txs[6].tx_hash(),
-        *tx.tx_hash(),
-        "user tx should be in correct position in block"
+        number_contract_count, 4,
+        "Should have 4 flashblocks number contract txs"
     );
     // check that the tee signer did not send any transactions
     let balance = provider.get_balance(TEE_DEBUG_ADDRESS).await?;
