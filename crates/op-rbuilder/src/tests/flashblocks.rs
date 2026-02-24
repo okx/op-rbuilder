@@ -79,7 +79,7 @@ async fn test_flashblocks_number_contract_builder_tx(rbuilder: LocalInstance) ->
         .send()
         .await?;
 
-    // Create valid transactions for flashblocks 2-4
+    // Create valid transactions
     let user_transactions = create_flashblock_transactions(&driver, 2..5).await?;
 
     // Build block with deploy tx in first flashblock, and a random valid transfer in every other flashblock
@@ -133,7 +133,7 @@ async fn test_flashblocks_number_contract_builder_tx(rbuilder: LocalInstance) ->
         .await?
         .expect("init tx not mined");
 
-    // Create user transactions for flashblocks 1 - 5
+    // Create user transactions
     let user_transactions = create_flashblock_transactions(&driver, 1..5).await?;
 
     // Build second block after initialization which will call the flashblock number contract
