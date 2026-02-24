@@ -6,8 +6,8 @@ use crate::{
     args::OpRbuilderArgs,
     primitives::bundle::MAX_BLOCK_RANGE_BLOCKS,
     tests::{
-        BlockTransactionsExt, BuilderTxValidation, BundleOpts, ChainDriver,
-        LocalInstance, TransactionBuilderExt,
+        BlockTransactionsExt, BuilderTxValidation, BundleOpts, ChainDriver, LocalInstance,
+        TransactionBuilderExt,
     },
 };
 
@@ -296,4 +296,3 @@ async fn allow_reverted_transactions_without_bundle(rbuilder: LocalInstance) -> 
 
     Ok(())
 }
-

@@ -123,5 +123,4 @@ mod tests {
         // Check that it's empty
         assert!(iterator.next(()).is_none(), "Iterator should be empty");
     }
-
 }
