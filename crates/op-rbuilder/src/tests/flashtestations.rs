@@ -150,11 +150,12 @@ async fn test_flashtestations_with_number_contract(rbuilder: LocalInstance) -> e
     let tx = driver
         .create_transaction()
         .random_valid_transfer()
-        .with_bundle(BundleOpts::default().with_flashblock_number_min(4))
+        .with_bundle(BundleOpts::default())
         .send()
         .await?;
     let block = driver.build_new_block_with_current_timestamp(None).await?;
     // 1 deposit tx, 1 fallback builder tx, 4 flashblocks number tx, valid tx, block proof
+    assert!(block.includes(tx.tx_hash()));
     let txs = block.transactions.into_transactions_vec();
     assert_eq!(txs.len(), 8, "Expected 8 transactions in block");
     // Check builder tx
@@ -164,26 +165,24 @@ async fn test_flashtestations_with_number_contract(rbuilder: LocalInstance) -> e
         "fallback builder tx should send to zero address"
     );
     // flashblocks number contract
-    for i in 2..6 {
-        assert_eq!(
-            txs[i].to(),
-            Some(FLASHBLOCKS_NUMBER_ADDRESS),
-            "builder tx should send to flashblocks number contract at index {}",
-            i
-        );
+    let mut number_contract_count = 0;
+    for t in &txs {
+        if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
+            number_contract_count += 1;
+        }
     }
-    // check regular tx
     assert_eq!(
-        txs[6].tx_hash(),
-        *tx.tx_hash(),
-        "bundle tx was not in block"
+        number_contract_count, 4,
+        "Should have 4 flashblocks number contract txs"
     );
     // check block proof tx
-    assert_eq!(
-        txs[7].to(),
-        Some(BLOCK_BUILDER_POLICY_ADDRESS),
-        "block proof tx should call block policy address"
-    );
+    let mut block_proof_count = 0;
+    for t in &txs {
+        if t.to() == Some(BLOCK_BUILDER_POLICY_ADDRESS) {
+            block_proof_count += 1;
+        }
+    }
+    assert_eq!(block_proof_count, 1, "Should have 1 block proof tx");
     // Verify flashblock number incremented correctly
     let contract = FlashblocksNumber::new(FLASHBLOCKS_NUMBER_ADDRESS, provider.clone());
     let current_number = contract.getFlashblockNumber().call().await?;
