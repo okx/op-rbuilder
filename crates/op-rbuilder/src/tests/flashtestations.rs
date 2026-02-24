@@ -12,7 +12,7 @@ use crate::{
         BLOCK_BUILDER_POLICY_ADDRESS, BlockTransactionsExt, BundleOpts, ChainDriver,
         ChainDriverExt, FLASHBLOCKS_NUMBER_ADDRESS, FLASHTESTATION_REGISTRY_ADDRESS, LocalInstance,
         MOCK_DCAP_ADDRESS, TEE_DEBUG_ADDRESS, TransactionBuilderExt,
-        block_builder_policy::BlockBuilderPolicy, builder_signer,
+        block_builder_policy::BlockBuilderPolicy, builder_signer, count_txs_to,
         flashblocks_number_contract::FlashblocksNumber,
         flashtestation_registry::FlashtestationRegistry,
     },
@@ -167,24 +167,17 @@ async fn test_flashtestations_with_number_contract(rbuilder: LocalInstance) -> e
         "fallback builder tx should send to zero address"
     );
     // flashblocks number contract
-    let mut number_contract_count = 0;
-    for t in txs.iter() {
-        if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
-            number_contract_count += 1;
-        }
-    }
     assert_eq!(
-        number_contract_count, 4,
+        count_txs_to(&txs, FLASHBLOCKS_NUMBER_ADDRESS),
+        4,
         "Should have 4 flashblocks number contract txs"
     );
     // check block proof tx
-    let mut block_proof_count = 0;
-    for t in txs.iter() {
-        if t.to() == Some(BLOCK_BUILDER_POLICY_ADDRESS) {
-            block_proof_count += 1;
-        }
-    }
-    assert_eq!(block_proof_count, 1, "Should have 1 block proof tx");
+    assert_eq!(
+        count_txs_to(&txs, BLOCK_BUILDER_POLICY_ADDRESS),
+        1,
+        "Should have 1 block proof tx"
+    );
     // Verify flashblock number incremented correctly
     let contract = FlashblocksNumber::new(FLASHBLOCKS_NUMBER_ADDRESS, provider.clone());
     let current_number = contract.getFlashblockNumber().call().await?;
@@ -316,7 +309,7 @@ async fn test_flashtestations_permit_with_flashblocks_number_contract(
     // user tx
     assert!(block.includes(tx.tx_hash()));
     let txs = block.transactions.into_transactions_vec();
-    // // 1 deposit tx, 1 regular builder tx, 4 flashblocks number tx, 1 user tx, 1 block proof tx
+    // 1 deposit tx, 1 regular builder tx, 4 flashblocks number tx, 1 user tx, 1 block proof tx
     assert_eq!(num_txs, 8, "Expected 8 transactions in block");
     // Check builder tx
     assert_eq!(
@@ -325,24 +318,17 @@ async fn test_flashtestations_permit_with_flashblocks_number_contract(
         "builder tx should send to zero address"
     );
     // flashblocks number contract
-    let mut number_contract_count = 0;
-    for t in txs.iter() {
-        if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
-            number_contract_count += 1;
-        }
-    }
     assert_eq!(
-        number_contract_count, 4,
+        count_txs_to(&txs, FLASHBLOCKS_NUMBER_ADDRESS),
+        4,
         "Should have 4 flashblocks number contract txs"
     );
     // block proof tx
-    let mut block_proof_count = 0;
-    for t in txs.iter() {
-        if t.to() == Some(BLOCK_BUILDER_POLICY_ADDRESS) {
-            block_proof_count += 1;
-        }
-    }
-    assert_eq!(block_proof_count, 1, "Should have 1 block proof tx");
+    assert_eq!(
+        count_txs_to(&txs, BLOCK_BUILDER_POLICY_ADDRESS),
+        1,
+        "Should have 1 block proof tx"
+    );
     // check that the tee signer did not send any transactions
     let balance = provider.get_balance(TEE_DEBUG_ADDRESS).await?;
     assert!(balance.is_zero());
@@ -414,33 +400,23 @@ async fn test_flashtestations_permit_with_flashblocks_number_permit(
     assert_eq!(num_txs, 8, "Expected 8 transactions in block");
     // After add_builder_tx executes in flashblock 1, TEE is authorized and remaining builder txs
     // route to the number contract
-    let mut regular_builder_count = 0;
-    let mut number_contract_count = 0;
-    for t in txs.iter() {
-        if t.to() == Some(Address::ZERO) {
-            regular_builder_count += 1;
-        }
-        if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
-            number_contract_count += 1;
-        }
-    }
     assert_eq!(
-        regular_builder_count, 2,
+        count_txs_to(&txs, Address::ZERO),
+        2,
         "Should have 2 regular builder txs"
     );
     // 3 number contract builder txs + 1 add_builder_tx (also targets number contract)
     assert_eq!(
-        number_contract_count, 4,
+        count_txs_to(&txs, FLASHBLOCKS_NUMBER_ADDRESS),
+        4,
         "Should have 4 txs to number contract"
     );
     // block proof tx
-    let mut block_proof_count = 0;
-    for t in txs.iter() {
-        if t.to() == Some(BLOCK_BUILDER_POLICY_ADDRESS) {
-            block_proof_count += 1;
-        }
-    }
-    assert_eq!(block_proof_count, 1, "Should have 1 block proof tx");
+    assert_eq!(
+        count_txs_to(&txs, BLOCK_BUILDER_POLICY_ADDRESS),
+        1,
+        "Should have 1 block proof tx"
+    );
 
     let tx = driver
         .create_transaction()
@@ -455,14 +431,9 @@ async fn test_flashtestations_permit_with_flashblocks_number_permit(
     // 1 deposit tx, 1 regular builder tx, 4 flashblocks builder tx, 1 user tx, 1 block proof tx
     assert_eq!(txs.len(), 8, "Expected 8 transactions in block");
     // flashblocks number contract
-    let mut number_contract_count = 0;
-    for t in txs.iter() {
-        if t.to() == Some(FLASHBLOCKS_NUMBER_ADDRESS) {
-            number_contract_count += 1;
-        }
-    }
     assert_eq!(
-        number_contract_count, 4,
+        count_txs_to(&txs, FLASHBLOCKS_NUMBER_ADDRESS),
+        4,
         "Should have 4 flashblocks number contract txs"
     );
     // check that the tee signer did not send any transactions

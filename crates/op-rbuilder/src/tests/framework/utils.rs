@@ -378,6 +378,15 @@ impl AsTxs for Vec<TxHash> {
     }
 }
 
+/// Counts transactions with a given `to` address in a block's transaction list.
+pub fn count_txs_to(txs: &[Transaction], to: Address) -> usize {
+    use alloy_consensus::Transaction as _;
+    txs.iter()
+        .map(|tx| tx.to())
+        .filter(|t| *t == Some(to))
+        .count()
+}
+
 pub fn create_test_db(config: NodeConfig<OpChainSpec>) -> Arc<TempDatabase<DatabaseEnv>> {
     let path = reth_node_core::dirs::MaybePlatformPath::<DataDirPath>::from(
         reth_db::test_utils::tempdir_path(),

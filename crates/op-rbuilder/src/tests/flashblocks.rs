@@ -10,7 +10,7 @@ use crate::{
     args::{FlashblocksArgs, OpRbuilderArgs},
     tests::{
         BlockTransactionsExt, BundleOpts, ChainDriver, FLASHBLOCKS_NUMBER_ADDRESS, LocalInstance,
-        TransactionBuilderExt, flashblocks_number_contract::FlashblocksNumber,
+        TransactionBuilderExt, count_txs_to, flashblocks_number_contract::FlashblocksNumber,
     },
 };
 
@@ -106,13 +106,11 @@ async fn test_flashblocks_number_contract_builder_tx(rbuilder: LocalInstance) ->
         .as_transactions()
         .expect("transactions not in block");
     // Verify builder txs (should be regular since builder tx is not registered yet)
-    let mut builder_tx_count = 0;
-    for tx in txs.iter() {
-        if tx.to() == Some(Address::ZERO) {
-            builder_tx_count += 1;
-        }
-    }
-    assert_eq!(builder_tx_count, 5, "Should have 5 regular builder txs");
+    assert_eq!(
+        count_txs_to(txs, Address::ZERO),
+        5,
+        "Should have 5 regular builder txs"
+    );
     // Verify deploy tx
     assert!(block.includes(deploy_tx.tx_hash()));
 
@@ -156,13 +154,11 @@ async fn test_flashblocks_number_contract_builder_tx(rbuilder: LocalInstance) ->
 
     // Other builder txs should call the contract
     // Verify builder txs
-    let mut contract_tx_count = 0;
-    for tx in txs.iter() {
-        if tx.to() == Some(contract_address) {
-            contract_tx_count += 1;
-        }
-    }
-    assert_eq!(contract_tx_count, 4, "Should have 4 contract builder txs");
+    assert_eq!(
+        count_txs_to(&txs, contract_address),
+        4,
+        "Should have 4 contract builder txs"
+    );
 
     // Verify flashblock number incremented correctly
     let contract = FlashblocksNumber::new(contract_address, provider.clone());
