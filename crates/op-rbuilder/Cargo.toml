@@ -166,6 +166,7 @@ reth-ipc = { workspace = true }
 reth-node-builder = { workspace = true, features = ["test-utils"] }
 ctor = "0.4.2"
 rlimit = { version = "0.10" }
+tokio = { workspace = true, features = ["test-util"] }
 hyper = { version = "1.7.0", features = ["http1"] }
 hyper-util = { version = "0.1.11" }
 http-body-util = { version = "0.1.3" }
